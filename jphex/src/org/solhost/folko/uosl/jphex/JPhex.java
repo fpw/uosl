@@ -23,11 +23,11 @@ import java.util.logging.*;
 
 import org.solhost.folko.uosl.common.LogFormatter;
 import org.solhost.folko.uosl.jphex.engines.TimerQueue;
+import org.solhost.folko.uosl.jphex.network.PacketHandler;
 import org.solhost.folko.uosl.jphex.network.Server;
 import org.solhost.folko.uosl.jphex.scripting.ScriptAPI;
 import org.solhost.folko.uosl.jphex.scripting.ScriptAPIImpl;
 import org.solhost.folko.uosl.jphex.scripting.ScriptManager;
-import org.solhost.folko.uosl.jphex.world.PacketHandler;
 import org.solhost.folko.uosl.jphex.world.World;
 import org.solhost.folko.uosl.libuosl.data.SLData;
 

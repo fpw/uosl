@@ -16,7 +16,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  ******************************************************************************/
-package org.solhost.folko.uosl.jphex.world;
+package org.solhost.folko.uosl.jphex.network;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -24,8 +24,9 @@ import java.util.logging.Logger;
 
 import org.solhost.folko.uosl.common.RandUtil;
 import org.solhost.folko.uosl.jphex.engines.Group;
-import org.solhost.folko.uosl.jphex.network.*;
 import org.solhost.folko.uosl.jphex.types.*;
+import org.solhost.folko.uosl.jphex.world.ObjectRegistry;
+import org.solhost.folko.uosl.jphex.world.World;
 import org.solhost.folko.uosl.libuosl.data.SLStatic;
 import org.solhost.folko.uosl.libuosl.network.packets.*;
 import org.solhost.folko.uosl.libuosl.types.Attribute;
