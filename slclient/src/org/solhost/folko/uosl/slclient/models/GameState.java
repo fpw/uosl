@@ -12,6 +12,7 @@ import org.solhost.folko.uosl.libuosl.network.SendableMobile;
 import org.solhost.folko.uosl.libuosl.network.SendableObject;
 import org.solhost.folko.uosl.libuosl.network.packets.LoginPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.MoveRequestPacket;
+import org.solhost.folko.uosl.libuosl.network.packets.SpeechRequestPacket;
 import org.solhost.folko.uosl.libuosl.types.Direction;
 import org.solhost.folko.uosl.libuosl.types.Items;
 import org.solhost.folko.uosl.libuosl.types.Point2D;
@@ -137,6 +138,11 @@ public class GameState {
         }
     }
 
+    public synchronized void playerTextInput(String text) {
+        SpeechRequestPacket packet = new SpeechRequestPacket(text, 0x0000FF, SpeechRequestPacket.MODE_BARK);
+        connection.sendPacket(packet);
+    }
+
     public synchronized void allowMove(short sequence) {
         lastAckedMoveSequence = sequence;
     }
@@ -209,6 +215,13 @@ public class GameState {
         itm.setLayer(itemInfo.getLayer());
         itm.setHue(itemInfo.getHue());
         mob.equip(itm);
+    }
+
+    public SLObject getObjectBySerial(long serial) {
+        if(serial == player.getSerial()) {
+            return player;
+        }
+        return objectsInRange.get(serial);
     }
 
     public long getTimeMillis() {

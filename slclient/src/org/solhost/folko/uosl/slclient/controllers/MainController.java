@@ -1,5 +1,6 @@
 package org.solhost.folko.uosl.slclient.controllers;
 
+import java.awt.Color;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.logging.Level;
@@ -7,6 +8,7 @@ import java.util.logging.Logger;
 
 import org.solhost.folko.uosl.libuosl.types.Direction;
 import org.solhost.folko.uosl.slclient.models.GameState;
+import org.solhost.folko.uosl.slclient.models.SLObject;
 import org.solhost.folko.uosl.slclient.models.GameState.State;
 import org.solhost.folko.uosl.slclient.views.GameView;
 import org.solhost.folko.uosl.slclient.views.LoginView;
@@ -123,6 +125,7 @@ public class MainController {
 
     public void onGameError(String reason) {
         log.severe("Game error: " + reason);
+        gameRunning = false;
     }
 
     public void onGameWindowClosed() {
@@ -179,6 +182,42 @@ public class MainController {
 
     public void onUpdateRangeChange(int sceneRadius) {
         game.setUpdateRange(sceneRadius);
+    }
+
+    public void onTextEntered(String text) {
+        if(text.length() > 0) {
+            game.playerTextInput(text);
+        }
+    }
+
+    public void incomingSysMsg(String text, long color) {
+        log.fine("SysMessage: " + text);
+        int col = Integer.reverseBytes((int) color) >> 8;
+        gameView.showSysMessage(text, new Color(col));
+    }
+
+    public void incomingSee(SLObject obj, String name, long color) {
+        if(obj == null) {
+            log.warning("Received 'you see' message for unknown object");
+            return;
+        }
+        int col = Integer.reverseBytes((int) color) >> 8;
+        gameView.showTextAbove(obj, "You see: " + name, new Color(col));
+    }
+
+    public void incomingSay(SLObject obj, String name, String text, long color) {
+        if(obj == null) {
+            // TODO: display in lower left or something
+            log.warning("Received speech for unknown object");
+            return;
+        }
+        // TODO: log to journal with name
+        int col = Integer.reverseBytes((int) color) >> 8;
+        gameView.showTextAbove(obj, text, new Color(col));
+    }
+
+    public void incomingSound(int soundID) {
+        soundManager.playSound(soundID);
     }
 
     public void onReportFPS(long fps) {

@@ -1,5 +1,6 @@
 package org.solhost.folko.uosl.slclient.views;
 
+import java.awt.Color;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
 import java.nio.file.Paths;
@@ -32,7 +33,9 @@ import org.solhost.folko.uosl.slclient.controllers.MainController;
 import org.solhost.folko.uosl.slclient.models.GameState;
 import org.solhost.folko.uosl.slclient.models.SLItem;
 import org.solhost.folko.uosl.slclient.models.SLMobile;
+import org.solhost.folko.uosl.slclient.models.SLObject;
 import org.solhost.folko.uosl.slclient.models.TexturePool;
+import org.solhost.folko.uosl.slclient.views.TextLog.TextEntry;
 
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL15.*;
@@ -53,6 +56,10 @@ public class GameView {
     private final SLStatics statics;
     private final SLArt art;
 
+    private final InputGump inputGump;
+    private final TextLog textLog;
+    private final Object sysMessageEntry;
+
     private final MainController mainController;
     private final GameState game;
 
@@ -61,7 +68,6 @@ public class GameView {
     private Integer vaoID, vboID, eboID;
     private int texLocation, zOffsetLocation, matLocation, texTypeLocation;
 
-    private boolean gridOnly;
     private float zoom = 1.0f;
 
     private int animFrameCounter;
@@ -77,6 +83,9 @@ public class GameView {
         this.art = SLData.get().getArt();
         this.tiles = SLData.get().getTiles();
         this.statics = SLData.get().getStatics();
+        this.inputGump = new InputGump();
+        this.textLog = new TextLog();
+        this.sysMessageEntry = new Object();
 
         try {
             Display.setDisplayMode(new DisplayMode(DEFAULT_WIDTH, DEFAULT_HEIGHT));
@@ -86,7 +95,6 @@ public class GameView {
         }
 
         projection = new Transform();
-        gridOnly = false;
     }
 
     public void createWindow() {
@@ -114,13 +122,14 @@ public class GameView {
             return;
         }
 
+        renderGameScene();
+
+        updateFPS();
+        Display.update();
+
         if(Display.wasResized()) {
             onResize();
         }
-
-        renderGameScene();
-        updateFPS();
-        Display.update();
     }
 
     public void pause() {
@@ -148,7 +157,7 @@ public class GameView {
             animFrameCounter++;
             nextAnimFrameIncrease = animDelay;
         }
-
+        textLog.update(elapsedMillis);
         handleInput();
     }
 
@@ -156,13 +165,13 @@ public class GameView {
         while(Keyboard.next()) {
             if(Keyboard.getEventKeyState()) {
                 // pressed
-                if(Keyboard.getEventCharacter() == 'g') {
-                    gridOnly = !gridOnly;
-                    if(gridOnly) {
-                        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-                    } else {
-                        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-                    }
+                int c = Keyboard.getEventCharacter();
+                if(c >= 32 && c < 128) {
+                    // printable ASCII and DEL (127)
+                    inputGump.feedCharacter(Keyboard.getEventCharacter());
+                } else if(c == '\n' || c == '\r') {
+                    String text = inputGump.getAndReset();
+                    mainController.onTextEntered(text);
                 }
             } else {
                 // released
@@ -209,6 +218,8 @@ public class GameView {
     }
 
     private void initGL() {
+        glClear(GL_COLOR_BUFFER_BIT);
+
         shader = new ShaderProgram();
         try {
             shader.setVertexShader(Paths.get("shaders", "tile.vert"));
@@ -341,6 +352,25 @@ public class GameView {
                 }
             }
         }
+
+        // text input line
+        drawTextAtScreenPosition(inputGump.getTexture(), 5, Display.getHeight() - inputGump.getTextHeight() - 5, false);
+
+        textLog.visitEntries((aboveWhom, entries) -> {
+            int yOff = 0;
+            for(TextEntry entry : entries) {
+                if(entry.texture != null) {
+                    if(aboveWhom instanceof SLObject) {
+                        int yPos = (int) (GRID_DIAMETER * 1.8f + entries.size() * textLog.getLineHeight() - yOff);
+                        drawTextAtGamePosition(entry.texture, ((SLObject) aboveWhom).getLocation(), yPos, false);
+                    } else if(aboveWhom == sysMessageEntry) {
+                        drawTextAtScreenPosition(entry.texture, 5, Display.getHeight() - inputGump.getTextHeight() * 5 - yOff, false);
+                    }
+                    yOff += textLog.getLineHeight();
+                }
+            }
+        });
+
         glDisableVertexAttribArray(0);
         glBindVertexArray(0);
         shader.unbind();
@@ -408,6 +438,48 @@ public class GameView {
         model.translate(x, y, z);
         model.rotate(0, 0, -45);
         model.scale(texture.getWidth() / GRID_EDGE, texture.getHeight() / GRID_EDGE, 1f);
+        shader.setUniformMatrix(matLocation, model.combine(view).combine(textureProjection));
+        glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
+    }
+
+    private void drawTextAtGamePosition(Texture text, Point2D where, int yOffset, boolean centered) {
+        int x = where.getX();
+        int y = where.getY();
+        int z = game.getPlayer().getLocation().getZ();
+
+        shader.setUniformInt(texTypeLocation, 1);
+        shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
+        text.setTextureUnit(0);
+        text.bind();
+
+        Transform textureProjection = new Transform(projection);
+        textureProjection.translate(-text.getWidth() / 2.0f, GRID_DIAMETER - text.getHeight() - yOffset, 0);
+
+        model.reset();
+        model.translate(x, y, z);
+        model.rotate(0, 0, -45);
+        model.scale(text.getWidth() / GRID_EDGE, text.getHeight() / GRID_EDGE, 1f);
+        shader.setUniformMatrix(matLocation, model.combine(view).combine(textureProjection));
+        glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
+
+    }
+
+    private void drawTextAtScreenPosition(Texture text, int x, int y, boolean centered) {
+        shader.setUniformInt(texTypeLocation, 1);
+        shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
+        text.setTextureUnit(0);
+        text.bind();
+
+        Transform textureProjection = new Transform(projection);
+        if(centered) {
+            textureProjection.translate(-text.getWidth() / 2.0f, 0, 0);
+        }
+        Transform view = new Transform();
+        view.translate(-Display.getWidth() / 2.0f, -Display.getHeight() / 2.0f, 0);
+
+        model.reset();
+        model.translate(x, y, 0);
+        model.scale(text.getWidth(), text.getHeight(), 1f);
         shader.setUniformMatrix(matLocation, model.combine(view).combine(textureProjection));
         glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
     }
@@ -515,5 +587,13 @@ public class GameView {
                 return z1 - z2;
             });
         return in;
+    }
+
+    public void showSysMessage(String text, Color color) {
+        textLog.addEntry(sysMessageEntry, text, color);
+    }
+
+    public void showTextAbove(SLObject obj, String text, Color color) {
+        textLog.addEntry(obj, text, color);
     }
 }

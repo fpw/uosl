@@ -56,6 +56,10 @@ public class Texture {
         glBindTexture(GL_TEXTURE_2D, id);
     }
 
+    public void dispose() {
+        glDeleteTextures(id);
+    }
+
     public int getWidth() {
         return width;
     }
