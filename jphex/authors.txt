@@ -1,0 +1,9 @@
+2014:
+SLClient started by Folke Will
+
+2013:
+JPhex and ViewSL started by Folke Will.
+
+2003:
+Reverse engineering of the client done by Folke Will.
+Validation of discovered packets and file formats done by Maximilian Scherr.

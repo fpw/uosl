@@ -1,11 +1,11 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>org.solhost.folko.uosl.viewsl</groupId>
-    <artifactId>viewsl</artifactId>
+    <groupId>org.solhost.folko.uosl.jphex</groupId>
+    <artifactId>jphex</artifactId>
     <version>0.0.2-SNAPSHOT</version>
-    <name>ViewSL</name>
-    <description>An application to view the data files of Ultima Online: Shattered Legacy</description>
+    <name>JPhex</name>
+    <description>A server emulator for Ultima Online: Shattered Legacy</description>
     <repositories>
         <repository>
             <id>uosl-mvn-repo</id>
@@ -21,10 +21,12 @@
         <plugins>
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.1</version>
+                <version>3.2</version>
                 <configuration>
                     <source>1.8</source>
+                    <compilerVersion>1.8</compilerVersion>
                     <target>1.8</target>
+                    <fork>true</fork>
                 </configuration>
             </plugin>
             <plugin>
@@ -56,6 +58,11 @@
     </build>
     <dependencies>
         <dependency>
+            <groupId>org.jruby</groupId>
+            <artifactId>jruby-complete</artifactId>
+            <version>1.7.16.1</version>
+        </dependency>
+        <dependency>
             <groupId>org.solhost.folko.uosl.libuosl</groupId>
             <artifactId>libuosl</artifactId>
             <version>0.0.2-SNAPSHOT</version>
@@ -68,7 +75,7 @@
         <tag>HEAD</tag>
     </scm>
     <properties>
-        <mainClass>org.solhost.folko.uosl.viewsl.ViewSL</mainClass>
+        <mainClass>org.solhost.folko.uosl.jphex.JPhex</mainClass>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
