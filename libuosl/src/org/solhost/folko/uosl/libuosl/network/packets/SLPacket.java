@@ -167,6 +167,7 @@ public abstract class SLPacket {
         case RemoveObjectPacket.ID:     return RemoveObjectPacket.read(buffer, dataLength);
         case AllowMovePacket.ID:        return AllowMovePacket.read(buffer, dataLength);
         case DenyMovePacket.ID:         return DenyMovePacket.read(buffer, dataLength);
+        case SoundPacket.ID:            return SoundPacket.read(buffer, dataLength);
         case DragPacket.ID:             return DragPacket.read(buffer, dataLength);
         case DropPacket.ID:             return DropPacket.read(buffer, dataLength);
         case SingleClickPacket.ID:      return SingleClickPacket.read(buffer, dataLength);
