@@ -1,0 +1,8 @@
+2013:
+libuosl started by Folke Will
+
+2003:
+Reverse engineering of the client done by Folke Will.
+Validation of discovered packets and file formats done by Maximilian Scherr.
+Information were used in a C++ project called Phex by Folke and in a
+Delphi project called UOANA by Maximilian.
