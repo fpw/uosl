@@ -32,9 +32,19 @@ public class SpeechRequestPacket extends SLPacket {
     private short mode;
     private long color;
 
+    private SpeechRequestPacket() {
+    }
+
+    public SpeechRequestPacket(String text, long color, short mode) {
+        initWrite(ID, 9 + text.length() + 1);
+        addUByte(mode);
+        addUDWord(color);
+        addString(text);
+    }
+
     public static SpeechRequestPacket read(ByteBuffer buffer, int len) {
         SpeechRequestPacket res = new SpeechRequestPacket();
-        res.mode = readUByte(buffer); // unknown
+        res.mode = readUByte(buffer);
         res.color = readUDWord(buffer);
         res.text = readString(buffer, len - 5);
         return res;
