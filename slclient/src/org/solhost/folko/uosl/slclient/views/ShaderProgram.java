@@ -35,11 +35,27 @@ public class ShaderProgram {
         return location;
     }
 
-    public void setUniformInt(int location, int value) {
+    public void setUniformInt(int location, int... values) {
         if(location == -1) {
             throw new RuntimeException("Invalid uniform: " + location);
         }
-        glUniform1i(location, value);
+
+        switch(values.length) {
+        case 1:
+            glUniform1i(location, values[0]);
+            break;
+        case 2:
+            glUniform2i(location, values[0], values[1]);
+            break;
+        case 3:
+            glUniform3i(location, values[0], values[1], values[2]);
+            break;
+        case 4:
+            glUniform4i(location, values[0], values[1], values[2], values[3]);
+            break;
+        default:
+            throw new RuntimeException("Invalid uniform size: " + values.length);
+    }
     }
 
     public void setUniformFloat(int location, float... values) {

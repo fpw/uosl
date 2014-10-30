@@ -8,6 +8,7 @@ import java.util.logging.Logger;
 
 import org.solhost.folko.uosl.libuosl.types.Direction;
 import org.solhost.folko.uosl.slclient.models.GameState;
+import org.solhost.folko.uosl.slclient.models.SLMobile;
 import org.solhost.folko.uosl.slclient.models.SLObject;
 import org.solhost.folko.uosl.slclient.models.GameState.State;
 import org.solhost.folko.uosl.slclient.views.GameView;
@@ -190,19 +191,28 @@ public class MainController {
         }
     }
 
+    public void onSingleClickMobile(SLMobile mob) {
+        game.queryMobileInformation(mob);
+    }
+
+    public void onDoubleClickObject(SLObject obj) {
+        game.doubleClick(obj);
+    }
+
     public void incomingSysMsg(String text, long color) {
         log.fine("SysMessage: " + text);
         int col = Integer.reverseBytes((int) color) >> 8;
         gameView.showSysMessage(text, new Color(col));
     }
 
-    public void incomingSee(SLObject obj, String name, long color) {
+    public void incomingSee(SLObject obj, String name, String text, long color) {
         if(obj == null) {
             log.warning("Received 'you see' message for unknown object");
             return;
         }
+        // TODO: log to journal with name
         int col = Integer.reverseBytes((int) color) >> 8;
-        gameView.showTextAbove(obj, "You see: " + name, new Color(col));
+        gameView.showTextAbove(obj, text, new Color(col));
     }
 
     public void incomingSay(SLObject obj, String name, String text, long color) {
@@ -221,7 +231,7 @@ public class MainController {
     }
 
     public void onReportFPS(long fps) {
-        log.finest("FPS: " + fps);
+        gameView.setTitleSuffix("| " + fps + " FPS");
     }
 
     public Stage getStage() {

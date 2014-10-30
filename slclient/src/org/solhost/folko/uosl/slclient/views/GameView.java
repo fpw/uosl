@@ -2,6 +2,7 @@ package org.solhost.folko.uosl.slclient.views;
 
 import java.awt.Color;
 import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
 import java.nio.ShortBuffer;
 import java.nio.file.Paths;
 import java.util.Collections;
@@ -44,12 +45,17 @@ import static org.lwjgl.opengl.GL30.*;
 
 public class GameView {
     private static final Logger log = Logger.getLogger("slclient.gameview");
+    private static final String WINDOW_TITLE = "Ultima Online: Shattered Legacy";
     private static final int DEFAULT_WIDTH  = 800;
     private static final int DEFAULT_HEIGHT = 600;
     private static final float GRID_DIAMETER = 42.0f;
     private static final float GRID_EDGE     = GRID_DIAMETER / (float) Math.sqrt(2);
     private static final float PROJECTION_CONSTANT = 4.0f;
     private static final int FPS = 20;
+
+    private static final int MOUSE_BUTTON_LEFT = 0;
+    private static final int MOUSE_BUTTON_RIGHT = 1;
+    private static final int MOUSE_DOUBLE_CLICK_MS = 300;
 
     private final SLMap map;
     private final SLTiles tiles;
@@ -66,7 +72,10 @@ public class GameView {
     private Transform projection, view, model;
     private ShaderProgram shader;
     private Integer vaoID, vboID, eboID;
-    private int texLocation, zOffsetLocation, matLocation, texTypeLocation;
+    private int texLocation, zOffsetLocation, matLocation, texTypeLocation, selectionIDLocation;
+
+    private final PickList pickList;
+    private final IntBuffer pickBuffer;
 
     private float zoom = 1.0f;
 
@@ -75,6 +84,9 @@ public class GameView {
     private long nextAnimFrameIncrease = animDelay;
 
     private long fpsCounter, lastFPSReport;
+
+    private long lastMouseLeftClickTime;
+    private SLObject lastMouseLeftClickObject;
 
     public GameView(MainController mainController) {
         this.mainController = mainController;
@@ -86,6 +98,8 @@ public class GameView {
         this.inputGump = new InputGump();
         this.textLog = new TextLog();
         this.sysMessageEntry = new Object();
+        this.pickBuffer = BufferUtils.createIntBuffer(1);
+        this.pickList = new PickList();
 
         try {
             Display.setDisplayMode(new DisplayMode(DEFAULT_WIDTH, DEFAULT_HEIGHT));
@@ -103,7 +117,7 @@ public class GameView {
             ContextAttribs contextAttribs = new ContextAttribs(3, 2)
                 .withForwardCompatible(true)
                 .withProfileCore(true);
-            Display.setTitle("Ultima Online: Shattered Legacy");
+            Display.setTitle(WINDOW_TITLE);
             Display.setResizable(true);
             Display.create(pixFormat, contextAttribs);
             initGL();
@@ -122,7 +136,7 @@ public class GameView {
             return;
         }
 
-        renderGameScene();
+        renderGameScene(false);
 
         updateFPS();
         Display.update();
@@ -146,11 +160,6 @@ public class GameView {
         fpsCounter++;
     }
 
-    private void handleInput() {
-        handleAsyncInput();
-        handleSyncInput();
-    }
-
     public void update(long elapsedMillis) {
         nextAnimFrameIncrease -= elapsedMillis;
         if(nextAnimFrameIncrease < 0) {
@@ -159,6 +168,11 @@ public class GameView {
         }
         textLog.update(elapsedMillis);
         handleInput();
+    }
+
+    private void handleInput() {
+        handleAsyncInput();
+        handleSyncInput();
     }
 
     private void handleAsyncInput() {
@@ -177,7 +191,27 @@ public class GameView {
                 // released
             }
         }
+
         while(Mouse.next()) {
+            if(Mouse.getEventButtonState()) {
+                if(Mouse.getEventButton() == MOUSE_BUTTON_LEFT) {
+                    // mouse button pressed
+                    long msDiff = game.getTimeMillis() - lastMouseLeftClickTime;
+                    if(msDiff < MOUSE_DOUBLE_CLICK_MS) {
+                        lastMouseLeftClickTime = 0;
+                        if(lastMouseLeftClickObject != null) {
+                            handleDoubleClick(lastMouseLeftClickObject);
+                        }
+                    } else {
+                        // potential single click
+                        lastMouseLeftClickObject = getMouseObject(Mouse.getEventX(), Mouse.getEventY());
+                        lastMouseLeftClickTime = game.getTimeMillis();
+                    }
+                } else if(Mouse.getEventButton() == MOUSE_BUTTON_RIGHT) {
+                    // nothing yet
+                }
+            }
+
             int dz = Mouse.getEventDWheel();
             if(dz > 0) {
                 onZoom(1.05f);
@@ -185,6 +219,28 @@ public class GameView {
                 onZoom(0.95f);
             }
         }
+
+        if(lastMouseLeftClickTime != 0 && game.getTimeMillis() - lastMouseLeftClickTime > MOUSE_DOUBLE_CLICK_MS) {
+            lastMouseLeftClickTime = 0;
+            if(lastMouseLeftClickObject != null) {
+                handleSingleClick(lastMouseLeftClickObject);
+            }
+        }
+    }
+
+    private void handleSingleClick(SLObject obj) {
+        if(obj instanceof SLItem) {
+            String name = obj.getName();
+            if(name.length() > 0) {
+                textLog.addEntry(obj, name, Color.WHITE);
+            }
+        } else if(obj instanceof SLMobile) {
+            mainController.onSingleClickMobile((SLMobile) obj);
+        }
+    }
+
+    private void handleDoubleClick(SLObject obj) {
+        mainController.onDoubleClickObject(obj);
     }
 
     private void handleSyncInput() {
@@ -229,6 +285,7 @@ public class GameView {
             zOffsetLocation = shader.getUniformLocation("zOffsets");
             texLocation = shader.getUniformLocation("tex");
             texTypeLocation = shader.getUniformLocation("textureType");
+            selectionIDLocation = shader.getUniformLocation("selectionID");
         } catch (Exception e) {
             shader.dispose();
             log.log(Level.SEVERE, "Couldn't load shader: " + e.getMessage(), e);
@@ -304,7 +361,7 @@ public class GameView {
         return map.getTileElevation(x, y);
     }
 
-    private void renderGameScene() {
+    private void renderGameScene(boolean selectMode) {
         int centerX = game.getPlayer().getLocation().getX();
         int centerY = game.getPlayer().getLocation().getY();
         int centerZ = game.getPlayer().getLocation().getZ();
@@ -319,12 +376,17 @@ public class GameView {
         view = Transform.UO(GRID_DIAMETER, PROJECTION_CONSTANT);
         view.translate(-centerX, -centerY, -centerZ);
 
+        if(!selectMode) {
+            shader.setUniformInt(selectionIDLocation, 0);
+        }
         shader.setUniformFloat(texLocation, 0);
 
         for(int x = centerX - radius; x < centerX + radius; x++) {
             for(int y = centerY - radius; y < centerY + radius; y++) {
                 // draw land even at invalid locations: will draw void like real client
-                drawLand(x, y);
+                if(!selectMode) {
+                    drawLand(x, y);
+                }
 
                 // but don't attempt to draw anything else at invalid locations
                 if(x < 0 || x >= SLMap.MAP_WIDTH || y < 0 || y >= SLMap.MAP_HEIGHT) {
@@ -333,11 +395,10 @@ public class GameView {
 
                 // now draw items and mobiles so that they cover the land
                 Point2D point = new Point2D(x, y);
-                if(point.equals(game.getPlayer().getLocation())) {
-                    drawMobile(game.getPlayer());
-                }
-
                 game.forEachObjectAt(point, (obj) -> {
+                    if(selectMode) {
+                        shader.setUniformInt(selectionIDLocation, pickList.enter(obj));
+                    }
                     if(obj instanceof SLMobile) {
                         drawMobile((SLMobile) obj);
                     } else if(obj instanceof SLItem) {
@@ -348,6 +409,9 @@ public class GameView {
                 // draw statics last so they cover mobiles
                 for(SLStatic sta : sortStatics(statics.getStatics(point))) {
                     SLItem staItm = SLItem.fromStatic(sta);
+                    if(selectMode) {
+                        shader.setUniformInt(selectionIDLocation, pickList.enter(staItm));
+                    }
                     drawItem(staItm);
                 }
             }
@@ -374,6 +438,18 @@ public class GameView {
         glDisableVertexAttribArray(0);
         glBindVertexArray(0);
         shader.unbind();
+    }
+
+    private SLObject getMouseObject(int x, int y) {
+        if(!Mouse.isInsideWindow()) {
+            return null;
+        }
+
+        pickList.clear();
+        renderGameScene(true);
+        glReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pickBuffer);
+        int pickId = pickBuffer.get(0) & ~0xFF000000;
+        return pickList.get(pickId);
     }
 
     private void drawLand(int x, int y) {
@@ -471,6 +547,7 @@ public class GameView {
         text.bind();
 
         Transform textureProjection = new Transform(projection);
+        textureProjection.scale(1 / zoom, 1 / zoom, 1);
         if(centered) {
             textureProjection.translate(-text.getWidth() / 2.0f, 0, 0);
         }
@@ -595,5 +672,9 @@ public class GameView {
 
     public void showTextAbove(SLObject obj, String text, Color color) {
         textLog.addEntry(obj, text, color);
+    }
+
+    public void setTitleSuffix(String suffix) {
+        Display.setTitle(WINDOW_TITLE + " " + suffix);
     }
 }

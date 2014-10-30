@@ -138,7 +138,7 @@ public class NetworkController implements ConnectionHandler {
 
         switch(packet.getMode()) {
         case SendTextPacket.MODE_SAY:       mainController.incomingSay(obj, src.getName(), text, color); break;
-        case SendTextPacket.MODE_SEE:       mainController.incomingSee(obj, src.getName(), color); break;
+        case SendTextPacket.MODE_SEE:       mainController.incomingSee(obj, src.getName(), text, color); break;
         case SendTextPacket.MODE_SYSMSG:    mainController.incomingSysMsg(text, color); break;
         default:
             log.warning("Unknown SendTextPacket mode: " + packet.getMode() + ", text: " + text);

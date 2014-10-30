@@ -239,7 +239,7 @@ public class Connection {
             try {
                 handler.onIncomingPacket(packet);
             } catch(Exception e) {
-                handler.onNetworkError("Error when handling incoming packet: " + e);
+                log.log(Level.SEVERE, "Error when handling incoming packet: " + e.getMessage(), e);
             }
         }
     }

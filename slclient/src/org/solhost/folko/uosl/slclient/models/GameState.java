@@ -10,8 +10,10 @@ import org.solhost.folko.uosl.libuosl.data.SLData;
 import org.solhost.folko.uosl.libuosl.network.SendableItem;
 import org.solhost.folko.uosl.libuosl.network.SendableMobile;
 import org.solhost.folko.uosl.libuosl.network.SendableObject;
+import org.solhost.folko.uosl.libuosl.network.packets.DoubleClickPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.LoginPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.MoveRequestPacket;
+import org.solhost.folko.uosl.libuosl.network.packets.SingleClickPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.SpeechRequestPacket;
 import org.solhost.folko.uosl.libuosl.types.Direction;
 import org.solhost.folko.uosl.libuosl.types.Items;
@@ -41,8 +43,8 @@ public class GameState {
 
     public GameState() {
         state = new SimpleObjectProperty<GameState.State>(State.DISCONNECTED);
-        player = new Player(-1, -1);
         objectsInRange = FXCollections.observableMap(new HashMap<Long, SLObject>());
+        player = new Player(-1, -1);
 
         player.locationProperty().addListener((Player, oldLoc, newLoc) -> onPlayerLocationChange(oldLoc, newLoc));
 
@@ -87,6 +89,7 @@ public class GameState {
 
     public synchronized void onLoginSuccess() {
         state.setValue(State.LOGGED_IN);
+        registerObject(player.getSerial(), player);
     }
 
     public synchronized int getUpdateRange() {
@@ -171,7 +174,7 @@ public class GameState {
 
     public synchronized void updateOrInitObject(SendableObject object, Direction facing, int amount) {
         // valid in object: serial, graphic, location, hue
-        SLObject updatedObj = objectsInRange.get(object.getSerial());
+        SLObject updatedObj = getObjectBySerial(object.getSerial());
         if(updatedObj == null) {
             // init new object
             if(object.getSerial() >= Items.SERIAL_FIRST) {
@@ -179,7 +182,7 @@ public class GameState {
             } else {
                 updatedObj = new SLMobile(object.getSerial(), object.getGraphic());
             }
-            objectsInRange.put(updatedObj.getSerial(), updatedObj);
+            registerObject(updatedObj.getSerial(), updatedObj);
         }
         updatedObj.setGraphic(object.getGraphic());
         updatedObj.setLocation(object.getLocation());
@@ -192,22 +195,31 @@ public class GameState {
         checkInvisible();
     }
 
+    public synchronized void queryMobileInformation(SLMobile mob) {
+        SingleClickPacket packet = new SingleClickPacket(mob.getSerial());
+        connection.sendPacket(packet);
+    }
+
+    public synchronized void doubleClick(SLObject obj) {
+        DoubleClickPacket packet = new DoubleClickPacket(obj.getSerial());
+        connection.sendPacket(packet);
+    }
+
+    private void registerObject(long serial, SLObject updatedObj) {
+        objectsInRange.put(updatedObj.getSerial(), updatedObj);
+    }
+
     public synchronized void removeObject(long serial) {
         objectsInRange.remove(serial);
     }
 
     public synchronized void equipItem(SendableMobile mobInfo, SendableItem itemInfo) {
-        SLObject obj;
-        if(mobInfo.getSerial() == player.getSerial()) {
-            obj = player;
-        } else {
-            obj = objectsInRange.get(mobInfo.getSerial());
-            // if the item is visible or anything is known about it, forget it now
-            objectsInRange.remove(itemInfo.getSerial());
-        }
+        SLObject obj = getObjectBySerial(mobInfo.getSerial());
+        // if the item is visible or anything is known about it, forget it now
+        removeObject(itemInfo.getSerial());
 
         if(obj == null || !(obj instanceof SLMobile)) {
-            log.warning("Equip received for unknown serial " + String.format("%08X", obj.getSerial()));
+            log.fine("Equip received for unknown serial " + String.format("%08X", mobInfo.getSerial()));
             return;
         }
         SLMobile mob = (SLMobile) obj;
