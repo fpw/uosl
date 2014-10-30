@@ -27,7 +27,7 @@ public abstract class SLObject implements SendableObject {
         this.location = new SimpleObjectProperty<Point3D>();
         this.graphic = new SimpleIntegerProperty();
         this.hue = new SimpleIntegerProperty();
-        this.name = new SimpleStringProperty();
+        this.name = new SimpleStringProperty("");
 
         setSerial(serial);
         setGraphic(graphic);

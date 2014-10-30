@@ -24,6 +24,7 @@ import org.solhost.folko.uosl.libuosl.data.SLMap;
 import org.solhost.folko.uosl.libuosl.data.SLStatic;
 import org.solhost.folko.uosl.libuosl.data.SLStatics;
 import org.solhost.folko.uosl.libuosl.data.SLTiles;
+import org.solhost.folko.uosl.libuosl.data.SLArt.ArtEntry;
 import org.solhost.folko.uosl.libuosl.data.SLArt.MobileAnimation;
 import org.solhost.folko.uosl.libuosl.data.SLTiles.LandTile;
 import org.solhost.folko.uosl.libuosl.data.SLTiles.StaticTile;
@@ -211,13 +212,6 @@ public class GameView {
                     // nothing yet
                 }
             }
-
-            int dz = Mouse.getEventDWheel();
-            if(dz > 0) {
-                onZoom(1.05f);
-            } else if(dz < 0) {
-                onZoom(0.95f);
-            }
         }
 
         if(lastMouseLeftClickTime != 0 && game.getTimeMillis() - lastMouseLeftClickTime > MOUSE_DOUBLE_CLICK_MS) {
@@ -252,12 +246,6 @@ public class GameView {
             mainController.onRequestMove(Direction.SOUTH_WEST);
         } else if(Keyboard.isKeyDown(Keyboard.KEY_RIGHT)) {
             mainController.onRequestMove(Direction.NORTH_EAST);
-        }
-
-        if(Keyboard.isKeyDown(Keyboard.KEY_RBRACKET)) {
-            onZoom(1.05f);
-        } else if(Keyboard.isKeyDown(Keyboard.KEY_SLASH)) {
-            onZoom(0.95f);
         }
 
         if(Mouse.isButtonDown(1)) {
@@ -425,7 +413,8 @@ public class GameView {
             for(TextEntry entry : entries) {
                 if(entry.texture != null) {
                     if(aboveWhom instanceof SLObject) {
-                        int yPos = (int) (GRID_DIAMETER * 1.8f + entries.size() * textLog.getLineHeight() - yOff);
+                        int graphicHeight = getGraphicHeight((SLObject) aboveWhom);
+                        int yPos = graphicHeight + (entries.size() - 1) * textLog.getLineHeight() - yOff;
                         drawTextAtGamePosition(entry.texture, ((SLObject) aboveWhom).getLocation(), yPos, false);
                     } else if(aboveWhom == sysMessageEntry) {
                         drawTextAtScreenPosition(entry.texture, 5, Display.getHeight() - inputGump.getTextHeight() * 5 - yOff, false);
@@ -438,6 +427,22 @@ public class GameView {
         glDisableVertexAttribArray(0);
         glBindVertexArray(0);
         shader.unbind();
+    }
+
+    private int getGraphicHeight(SLObject obj) {
+        int staticId = obj.getGraphic();
+        if(obj instanceof SLMobile) {
+            MobileAnimation anim = art.getAnimationEntry(obj.getGraphic(), ((SLMobile) obj).getFacing(), false);
+            if(anim != null && anim.frames.size() > 0) {
+                staticId = anim.frames.get(0);
+            }
+        }
+        ArtEntry entry = art.getStaticArt(staticId, false);
+        if(entry != null) {
+            return entry.image.getHeight();
+        } else {
+            return 0;
+        }
     }
 
     private SLObject getMouseObject(int x, int y) {
@@ -518,10 +523,10 @@ public class GameView {
         glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
     }
 
-    private void drawTextAtGamePosition(Texture text, Point2D where, int yOffset, boolean centered) {
+    private void drawTextAtGamePosition(Texture text, Point3D where, int yOffset, boolean centered) {
         int x = where.getX();
         int y = where.getY();
-        int z = game.getPlayer().getLocation().getZ();
+        int z = where.getZ();
 
         shader.setUniformInt(texTypeLocation, 1);
         shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);

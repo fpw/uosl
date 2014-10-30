@@ -39,6 +39,9 @@ public class SLItem extends SLObject implements SendableItem {
     public void setGraphic(int graphic) {
         super.setGraphic(graphic);
         tileInfo = SLData.get().getTiles().getStaticTile(graphic);
+        if(tileInfo != null && tileInfo.name != null) {
+            setName(tileInfo.name);
+        }
     }
 
     public void setAmount(int amount) {
