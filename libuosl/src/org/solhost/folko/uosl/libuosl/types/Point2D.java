@@ -111,12 +111,21 @@ public class Point2D implements Serializable {
     }
 
     public int getCellIndex() {
-        return (x / 8) * (MAP_WIDTH / 8) + (y / 8);
+        return getCellIndex(x, y);
     }
 
     public int getTileIndex() {
+        return getTileIndex(x, y);
+    }
+
+    public static int getCellIndex(int x, int y) {
+        return (x / 8) * (MAP_WIDTH / 8) + (y / 8);
+    }
+
+    public static int getTileIndex(int x, int y) {
         return (x % 8) + ((y % 8) * 8);
     }
+
 
     public static Point2D fromCell(int cell, int xOff, int yOff) {
         int x = (cell / (MAP_WIDTH / 8) * 8) + xOff;
@@ -124,7 +133,9 @@ public class Point2D implements Serializable {
         return new Point2D(x, y);
     }
 
-
+    public boolean equals2D(Point2D other) {
+        return this.x == other.x && this.y == other.y;
+    }
 
     @Override
     public int hashCode() {

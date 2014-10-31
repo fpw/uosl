@@ -25,76 +25,69 @@ import org.solhost.folko.uosl.libuosl.types.Point2D;
 public class SLMap {
     public final static int MAP_WIDTH = 1024;
     public final static int MAP_HEIGHT = 1024;
+    public final static int TILES_PER_CELL = 8 * 8;
+    public final static int CELL_COUNT = MAP_WIDTH * MAP_HEIGHT / TILES_PER_CELL;
     private final SLDataFile mapFile;
 
-    private class Tile {
+    private boolean cached;
+    private MapTile[][] tiles;
+
+    private class MapTile {
         int textureID;
         byte elevation;
     }
 
     public SLMap(String map0Path) throws IOException {
         mapFile = new SLDataFile(map0Path, true);
+        cached = false;
     }
 
-    private synchronized Tile readTile(Point2D pos) {
-        Tile res = new Tile();
-        int cell = pos.getCellIndex();
-        int tile = pos.getTileIndex();
-        int offset = cell * 196 + 4 + tile * 3;
-
-        mapFile.seek(offset);
-        res.textureID = mapFile.readUWord();
-        res.elevation = mapFile.readSByte();
-
-        return res;
+    public void buildCache() {
+        tiles = new MapTile[CELL_COUNT][TILES_PER_CELL];
+        for(int cell = 0; cell < CELL_COUNT; cell++) {
+            for(int x = 0; x < 8; x++) {
+                for(int y = 0; y < 8; y++) {
+                    tiles[cell][Point2D.getTileIndex(x, y)] = readTile(Point2D.fromCell(cell, x, y));
+                }
+            }
+        }
+        cached = true;
     }
 
-    public long getColor(int cellID) {
+    private MapTile readTile(Point2D pos) {
+        if(cached) {
+            return tiles[pos.getCellIndex()][pos.getTileIndex()];
+        }
+
+        synchronized(this) {
+            MapTile res = new MapTile();
+            int cell = pos.getCellIndex();
+            int tile = pos.getTileIndex();
+            int offset = cell * 196 + 4 + tile * 3;
+
+            mapFile.seek(offset);
+            res.textureID = mapFile.readUWord();
+            res.elevation = mapFile.readSByte();
+
+            return res;
+        }
+    }
+
+    // experimental
+    public synchronized long getColor(int cellID) {
         int offset = cellID * 196;
         mapFile.seek(offset);
         return mapFile.readUDWord();
     }
 
     // get the actual height as specified in the map file
-    public byte getTileElevation(int x, int y) {
-        if(x < 0 || x >= 1024 || y < 0 || y >= 1024) {
-            return 0;
-        }
-        Tile tile = readTile(new Point2D(x, y));
+    public byte getTileElevation(Point2D pos) {
+        MapTile tile = readTile(pos);
         return tile.elevation;
     }
 
-    // get the average elevation based on the surrounding
-    public byte getElevation(int x, int y) {
-        if(x < 0 || x >= 1024 || y < 0 || y >= 1024) {
-            return 0;
-        }
-        return getElevation(new Point2D(x, y));
-    }
-
-    // get the average elevation based on the surrounding
-    public byte getElevation(Point2D pos) {
-        Tile tile = readTile(pos);
-
-        // need to check surrounding terrain because a slope has different altitudes
-        // inside the tile
-        int x = pos.getX();
-        int y = pos.getY();
-        int top = tile.elevation;
-        int right = getTileElevation(x + 1,  y);
-        int bottom = getTileElevation(x + 1, y + 1);
-        int left = getTileElevation(x, y + 1);
-
-        // Check if left-right or top-bottom slope is stronger
-        if(Math.abs(top - bottom) > Math.abs(left - right)) {
-            return (byte) ((left + right) / 2.0);
-        } else {
-            return (byte) ((top + bottom) / 2.0);
-        }
-    }
-
     public int getTextureID(Point2D pos) {
-        Tile tile = readTile(pos);
+        MapTile tile = readTile(pos);
         return tile.textureID;
     }
 }
