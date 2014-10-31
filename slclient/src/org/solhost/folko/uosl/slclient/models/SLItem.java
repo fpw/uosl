@@ -16,12 +16,14 @@ public class SLItem extends SLObject implements SendableItem {
     private final IntegerProperty amount;
     private final Property<Short> layer, facingOverride;
     private StaticTile tileInfo;
+    private boolean isStatic;
 
     public SLItem(long serial, int graphic) {
         super(serial, graphic);
         amount = new SimpleIntegerProperty();
         layer = new SimpleObjectProperty<>();
         facingOverride = new SimpleObjectProperty<>();
+        isStatic = false;
     }
 
     public static SLItem fromStatic(SLStatic stat) {
@@ -32,6 +34,7 @@ public class SLItem extends SLObject implements SendableItem {
         res.setName(res.tileInfo.name);
         res.setFacingOverride((short) 0);
         res.setAmount(1);
+        res.isStatic = true;
         return res;
     }
 
@@ -85,5 +88,9 @@ public class SLItem extends SLObject implements SendableItem {
 
     public StaticTile getTileInfo() {
         return tileInfo;
+    }
+
+    public boolean isStatic() {
+        return isStatic;
     }
 }

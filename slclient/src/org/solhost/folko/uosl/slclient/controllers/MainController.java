@@ -1,6 +1,8 @@
 package org.solhost.folko.uosl.slclient.controllers;
 
 import java.awt.Color;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.logging.Level;
@@ -22,18 +24,23 @@ public class MainController {
     private static final Logger log = Logger.getLogger("slclient.main");
     private final GameState game;
     private final NetworkController networkController;
+    private final SoundManager soundManager;
     private final Stage stage;
+
     private Thread gameThread;
     private boolean gameRunning;
     private LoginView loginView;
     private GameView gameView;
-    private final SoundManager soundManager;
+    private final Queue<Runnable> updateTasks;
 
     public MainController(Stage stage) {
         this.stage = stage;
         this.game = new GameState();
         this.networkController = new NetworkController(this);
         this.soundManager = new SoundManager(game);
+        this.updateTasks = new ConcurrentLinkedQueue<Runnable>();
+
+        networkController.setSync(false);
 
         game.stateProperty().addListener((g, from, to) -> onGameStateChange(from, to));
     }
@@ -58,6 +65,17 @@ public class MainController {
             break;
         default:
             break;
+        }
+    }
+
+    public void scheduleUpdate(Runnable update) {
+        updateTasks.add(update);
+    }
+
+    private void runUpdateTasks() {
+        Runnable task;
+        while((task = updateTasks.poll()) != null) {
+            task.run();
         }
     }
 
@@ -104,10 +122,13 @@ public class MainController {
             Platform.runLater(task);
         }
 
+        networkController.setSync(true);
+
         try {
             task.get(); // wait for task to complete
             gameView = new GameView(this);
             gameThread = new Thread(() -> gameLoop());
+            gameThread.setName("GameLoop");
             gameThread.start();
         } catch (InterruptedException | ExecutionException e) {
             log.log(Level.FINE, "Login stopped: " + e.getMessage(), e);
@@ -137,6 +158,8 @@ public class MainController {
         shutdownSystems();
     }
 
+    // this is the main game thread, everything in GameView and GameState should run
+    // in this thread. Events can be posted using scheduleUpdate
     private void gameLoop() {
         long lastFrameTime = game.getTimeMillis();
         long thisFrameTime = game.getTimeMillis();
@@ -148,8 +171,8 @@ public class MainController {
                     thisFrameTime = game.getTimeMillis();
                     update(thisFrameTime - lastFrameTime);
                     gameView.render();
-                    lastFrameTime = thisFrameTime;
                     gameView.pause();
+                    lastFrameTime = thisFrameTime;
             }
         } catch(Exception e) {
             log.log(Level.SEVERE, "Game crashed: " + e.getMessage(), e);
@@ -168,6 +191,7 @@ public class MainController {
 
     private void update(long elapsedMillis) {
         try {
+            runUpdateTasks();
             gameView.update(elapsedMillis);
             soundManager.update(elapsedMillis);
         } catch(Exception e) {
@@ -215,7 +239,7 @@ public class MainController {
         gameView.showTextAbove(obj, text, new Color(col));
     }
 
-    public void incomingSay(SLObject obj, String name, String text, long color) {
+    public void incomingSpeech(SLObject obj, String name, String text, long color) {
         if(obj == null) {
             // TODO: display in lower left or something
             log.warning("Received speech for unknown object");

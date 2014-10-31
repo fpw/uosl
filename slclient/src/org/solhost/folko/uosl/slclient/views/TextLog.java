@@ -56,7 +56,7 @@ public class TextLog {
         }
     }
 
-    public synchronized void addEntry(Object where, String text, Color color) {
+    public void addEntry(Object where, String text, Color color) {
         List<TextEntry> list = entries.get(where);
         if(list == null) {
             list = new LinkedList<>();
@@ -65,7 +65,7 @@ public class TextLog {
         list.add(new TextEntry(text, color));
     }
 
-    public synchronized void visitEntries(BiConsumer<? super Object, ? super List<TextEntry>> c) {
+    public void visitEntries(BiConsumer<? super Object, ? super List<TextEntry>> c) {
         entries.forEach(c);
     }
 

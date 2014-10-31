@@ -61,13 +61,14 @@ public class Connection {
         socketChan.configureBlocking(false);
         socketChan.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ);
         connectionThread = new Thread(() -> loop());
+        connectionThread.setName("Network");
         connectionThread.setDaemon(true);
         connectionThread.start();
 
         connect();
     }
 
-    private synchronized void connect() throws IOException {
+    private void connect() throws IOException {
         try {
             log.info("Connecting to " + host + ", port " + port);
             InetSocketAddress addr = new InetSocketAddress(host, port);
@@ -84,7 +85,7 @@ public class Connection {
         }
     }
 
-    public synchronized void disconnect() {
+    public void disconnect() {
         try {
             log.fine("Disconnecting connection");
             selector.wakeup();
@@ -138,16 +139,14 @@ public class Connection {
                     }
                 }
             } catch (IOException e) {
-                synchronized(this) {
-                    handler.onNetworkError(e.getMessage());
-                }
+                handler.onNetworkError(e.getMessage());
                 break;
             }
         }
         log.fine("Left network loop");
     }
 
-    private synchronized void onConnect() {
+    private void onConnect() {
         try {
             socketChan.finishConnect();
         } catch(Exception e) {
@@ -158,22 +157,20 @@ public class Connection {
         handler.onConnected();
     }
 
-    public synchronized void sendPacket(SLPacket packet) {
+    public void sendPacket(SLPacket packet) {
         boolean needEnable = false;
 
-        synchronized(sendBuffer) {
-            if(sendBuffer.position() == 0) {
-                // there was nothing to send before, enable select notification for write-ready
-                needEnable = true;
-            }
-            try {
-                // append packet to sendBuffer
-                packet.writeTo(sendBuffer);
-            } catch (IOException e) {
-                log.log(Level.SEVERE, "Exception when writing packet: " + e.getMessage(), e);
-                handler.onRemoteDisconnect();
-                needEnable = false;
-            }
+        if(sendBuffer.position() == 0) {
+            // there was nothing to send before, enable select notification for write-ready
+            needEnable = true;
+        }
+        try {
+            // append packet to sendBuffer
+            packet.writeTo(sendBuffer);
+        } catch (IOException e) {
+            log.log(Level.SEVERE, "Exception when writing packet: " + e.getMessage(), e);
+            handler.onRemoteDisconnect();
+            needEnable = false;
         }
         if(needEnable) {
             synchronized(selectMutex) {
@@ -183,17 +180,15 @@ public class Connection {
         }
     }
 
-    private synchronized void onWritable() throws IOException {
+    private void onWritable() throws IOException {
         log.finest("Sending out write buffer");
         boolean needDisable = false;
-        synchronized(sendBuffer) {
-            sendBuffer.flip();
-            socketChan.write(sendBuffer);
-            sendBuffer.compact();
-            if(sendBuffer.position() == 0) {
-                // buffer empty again -> disable write notification
-                needDisable = true;
-            }
+        sendBuffer.flip();
+        socketChan.write(sendBuffer);
+        sendBuffer.compact();
+        if(sendBuffer.position() == 0) {
+            // buffer empty again -> disable write notification
+            needDisable = true;
         }
         if(needDisable) {
             synchronized(selectMutex) {
@@ -203,7 +198,7 @@ public class Connection {
         }
     }
 
-    private synchronized void onReadable() {
+    private void onReadable() {
         List<SLPacket> packets = new ArrayList<>(5);
 
         try {

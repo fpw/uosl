@@ -10,7 +10,6 @@ import java.util.logging.Logger;
 import org.solhost.folko.uosl.common.LogFormatter;
 import org.solhost.folko.uosl.libuosl.data.SLData;
 import org.solhost.folko.uosl.slclient.controllers.MainController;
-
 import javafx.application.Application;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
@@ -21,7 +20,7 @@ public class SLClient extends Application {
 
     @Override
     public void start(Stage stage) {
-        setupLogger(Level.FINER);
+        setupLogger(Level.FINE);
 
         log.info("Loading game data...");
         loadGameData();
@@ -59,6 +58,7 @@ public class SLClient extends Application {
                 dir = newDir.toString();
             }
         } while(!dataLoaded);
+        SLData.get().buildCaches();
     }
 
     private void setupLogger(Level level) {

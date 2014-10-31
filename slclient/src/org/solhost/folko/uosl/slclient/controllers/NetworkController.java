@@ -2,6 +2,7 @@ package org.solhost.folko.uosl.slclient.controllers;
 
 import java.io.IOException;
 import java.nio.channels.UnresolvedAddressException;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.solhost.folko.uosl.libuosl.network.SendableMobile;
@@ -28,10 +29,15 @@ public class NetworkController implements ConnectionHandler {
     private final MainController mainController;
     private final GameState game;
     private Connection connection;
+    private boolean syncPackets;
 
     public NetworkController(MainController mainController) {
         this.mainController = mainController;
         this.game = mainController.getGameState();
+    }
+
+    public synchronized void setSync(boolean sync) {
+        this.syncPackets = sync;
     }
 
     public void tryConnect(String host) {
@@ -94,8 +100,8 @@ public class NetworkController implements ConnectionHandler {
     }
 
     private void onInitPlayer(InitPlayerPacket packet) {
-        game.onLoginSuccess();
         game.getPlayer().setSerial(packet.getSerial());
+        game.onLoginSuccess();
     }
 
     private void onLocationChange(LocationPacket packet) {
@@ -137,7 +143,7 @@ public class NetworkController implements ConnectionHandler {
         long color = packet.getColor();
 
         switch(packet.getMode()) {
-        case SendTextPacket.MODE_SAY:       mainController.incomingSay(obj, src.getName(), text, color); break;
+        case SendTextPacket.MODE_SAY:       mainController.incomingSpeech(obj, src.getName(), text, color); break;
         case SendTextPacket.MODE_SEE:       mainController.incomingSee(obj, src.getName(), text, color); break;
         case SendTextPacket.MODE_SYSMSG:    mainController.incomingSysMsg(text, color); break;
         default:
@@ -149,21 +155,34 @@ public class NetworkController implements ConnectionHandler {
         mainController.incomingSound(packet.getSoundID());
     }
 
-    @Override
-    public void onIncomingPacket(SLPacket packet) {
+    private void handlePacket(SLPacket packet) {
         log.finest("Incoming packet: " + packet);
-        switch(packet.getID()) {
-        case LoginErrorPacket.ID:   onLoginFail((LoginErrorPacket) packet); break;
-        case InitPlayerPacket.ID:   onInitPlayer((InitPlayerPacket) packet); break;
-        case SendTextPacket.ID:     onIncomingText((SendTextPacket) packet); break;
-        case LocationPacket.ID:     onLocationChange((LocationPacket) packet); break;
-        case SendObjectPacket.ID:   onSendObject((SendObjectPacket) packet); break;
-        case RemoveObjectPacket.ID: onRemoveObject((RemoveObjectPacket) packet); break;
-        case EquipPacket.ID:        onEquip((EquipPacket) packet); break;
-        case AllowMovePacket.ID:    onAllowMove((AllowMovePacket) packet); break;
-        case DenyMovePacket.ID:     onDenyMove((DenyMovePacket) packet); break;
-        case SoundPacket.ID:        onSound((SoundPacket) packet); break;
-        default:                    log.warning("Unknown packet: " + packet);
+        try {
+            switch(packet.getID()) {
+            case LoginErrorPacket.ID:   onLoginFail((LoginErrorPacket) packet); break;
+            case InitPlayerPacket.ID:   onInitPlayer((InitPlayerPacket) packet); break;
+            case SendTextPacket.ID:     onIncomingText((SendTextPacket) packet); break;
+            case LocationPacket.ID:     onLocationChange((LocationPacket) packet); break;
+            case SendObjectPacket.ID:   onSendObject((SendObjectPacket) packet); break;
+            case RemoveObjectPacket.ID: onRemoveObject((RemoveObjectPacket) packet); break;
+            case EquipPacket.ID:        onEquip((EquipPacket) packet); break;
+            case AllowMovePacket.ID:    onAllowMove((AllowMovePacket) packet); break;
+            case DenyMovePacket.ID:     onDenyMove((DenyMovePacket) packet); break;
+            case SoundPacket.ID:        onSound((SoundPacket) packet); break;
+            default:                    log.warning("Unknown packet: " + packet);
+            }
+        } catch(Exception e) {
+            log.log(Level.SEVERE, "Exception in packet handler: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public synchronized void onIncomingPacket(SLPacket packet) {
+        if(syncPackets) {
+            // synchronize all packets as updates as soon as the main window is visible
+            mainController.scheduleUpdate(() -> handlePacket(packet));
+        } else {
+            handlePacket(packet);
         }
     }
 }

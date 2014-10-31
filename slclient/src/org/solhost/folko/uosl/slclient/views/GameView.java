@@ -5,8 +5,6 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.ShortBuffer;
 import java.nio.file.Paths;
-import java.util.Collections;
-import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -21,13 +19,10 @@ import org.lwjgl.opengl.PixelFormat;
 import org.solhost.folko.uosl.libuosl.data.SLArt;
 import org.solhost.folko.uosl.libuosl.data.SLData;
 import org.solhost.folko.uosl.libuosl.data.SLMap;
-import org.solhost.folko.uosl.libuosl.data.SLStatic;
-import org.solhost.folko.uosl.libuosl.data.SLStatics;
 import org.solhost.folko.uosl.libuosl.data.SLTiles;
 import org.solhost.folko.uosl.libuosl.data.SLArt.ArtEntry;
 import org.solhost.folko.uosl.libuosl.data.SLArt.MobileAnimation;
 import org.solhost.folko.uosl.libuosl.data.SLTiles.LandTile;
-import org.solhost.folko.uosl.libuosl.data.SLTiles.StaticTile;
 import org.solhost.folko.uosl.libuosl.types.Direction;
 import org.solhost.folko.uosl.libuosl.types.Point2D;
 import org.solhost.folko.uosl.libuosl.types.Point3D;
@@ -60,7 +55,6 @@ public class GameView {
 
     private final SLMap map;
     private final SLTiles tiles;
-    private final SLStatics statics;
     private final SLArt art;
 
     private final InputGump inputGump;
@@ -95,7 +89,6 @@ public class GameView {
         this.map = SLData.get().getMap();
         this.art = SLData.get().getArt();
         this.tiles = SLData.get().getTiles();
-        this.statics = SLData.get().getStatics();
         this.inputGump = new InputGump();
         this.textLog = new TextLog();
         this.sysMessageEntry = new Object();
@@ -136,6 +129,9 @@ public class GameView {
             mainController.onGameWindowClosed();
             return;
         }
+
+        // rendering will fill the back buffer, thus invalidating the select-frame
+        pickList.setValid(false);
 
         renderGameScene(false);
 
@@ -346,7 +342,7 @@ public class GameView {
     }
 
     private int getZ(int x, int y) {
-        return map.getTileElevation(x, y);
+        return map.getTileElevation(new Point2D(x, y));
     }
 
     private void renderGameScene(boolean selectMode) {
@@ -369,10 +365,13 @@ public class GameView {
         }
         shader.setUniformFloat(texLocation, 0);
 
-        for(int x = centerX - radius; x < centerX + radius; x++) {
-            for(int y = centerY - radius; y < centerY + radius; y++) {
+        for(int y = centerY - radius; y < centerY + radius; y++) {
+            for(int x = centerX - radius; x < centerX + radius; x++) {
                 // draw land even at invalid locations: will draw void like real client
                 if(!selectMode) {
+                    // but only draw when doing real-rendering and not select-rendering
+                    // because land tiles will always be in background and are never
+                    // selectable
                     drawLand(x, y);
                 }
 
@@ -383,7 +382,10 @@ public class GameView {
 
                 // now draw items and mobiles so that they cover the land
                 Point2D point = new Point2D(x, y);
-                game.forEachObjectAt(point, (obj) -> {
+                game.getObjectsAt(point)
+                    .sorted(this::staticPaintOrderCompare)
+                    .forEach((obj) ->
+                {
                     if(selectMode) {
                         shader.setUniformInt(selectionIDLocation, pickList.enter(obj));
                     }
@@ -393,36 +395,30 @@ public class GameView {
                         drawItem((SLItem) obj);
                     }
                  });
-
-                // draw statics last so they cover mobiles
-                for(SLStatic sta : sortStatics(statics.getStatics(point))) {
-                    SLItem staItm = SLItem.fromStatic(sta);
-                    if(selectMode) {
-                        shader.setUniformInt(selectionIDLocation, pickList.enter(staItm));
-                    }
-                    drawItem(staItm);
-                }
             }
         }
 
-        // text input line
-        drawTextAtScreenPosition(inputGump.getTexture(), 5, Display.getHeight() - inputGump.getTextHeight() - 5, false);
+        if(!selectMode) {
+            // text input line
+            drawTextAtScreenPosition(inputGump.getTexture(), 5, Display.getHeight() - inputGump.getTextHeight() - 5, false);
 
-        textLog.visitEntries((aboveWhom, entries) -> {
-            int yOff = 0;
-            for(TextEntry entry : entries) {
-                if(entry.texture != null) {
-                    if(aboveWhom instanceof SLObject) {
-                        int graphicHeight = getGraphicHeight((SLObject) aboveWhom);
-                        int yPos = graphicHeight + (entries.size() - 1) * textLog.getLineHeight() - yOff;
-                        drawTextAtGamePosition(entry.texture, ((SLObject) aboveWhom).getLocation(), yPos, false);
-                    } else if(aboveWhom == sysMessageEntry) {
-                        drawTextAtScreenPosition(entry.texture, 5, Display.getHeight() - inputGump.getTextHeight() * 5 - yOff, false);
+            // draw all other visible text
+            textLog.visitEntries((aboveWhom, entries) -> {
+                int yOff = 0;
+                for(TextEntry entry : entries) {
+                    if(entry.texture != null) {
+                        if(aboveWhom instanceof SLObject) {
+                            int graphicHeight = getGraphicHeight((SLObject) aboveWhom);
+                            int yPos = graphicHeight + (entries.size() - 1) * textLog.getLineHeight() - yOff;
+                            drawTextAtGamePosition(entry.texture, ((SLObject) aboveWhom).getLocation(), yPos, false);
+                        } else if(aboveWhom == sysMessageEntry) {
+                            drawTextAtScreenPosition(entry.texture, 5, Display.getHeight() - inputGump.getTextHeight() * 5 - yOff, false);
+                        }
+                        yOff += textLog.getLineHeight();
                     }
-                    yOff += textLog.getLineHeight();
                 }
-            }
-        });
+            });
+        }
 
         glDisableVertexAttribArray(0);
         glBindVertexArray(0);
@@ -450,10 +446,15 @@ public class GameView {
             return null;
         }
 
-        pickList.clear();
-        renderGameScene(true);
-        glReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pickBuffer);
-        int pickId = pickBuffer.get(0) & ~0xFF000000;
+        if(!pickList.isValid()) {
+            // there is no select-frame for the current frame yet, so render one
+            pickList.clear();
+            renderGameScene(true);
+            pickList.setValid(true);
+        }
+
+        glReadPixels(x, y, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pickBuffer);
+        int pickId = pickBuffer.get(0);
         return pickList.get(pickId);
     }
 
@@ -466,8 +467,9 @@ public class GameView {
         if(x < 0 || x >= SLMap.MAP_WIDTH || y < 0 || y >= SLMap.MAP_HEIGHT) {
             point = null;
             texture = TexturePool.getLandTexture(1); // VOID texture like in real client
+            shader.setUniformInt(texTypeLocation, 0);
         } else {
-            point = new Point3D(x, y, map.getTileElevation(x, y));
+            point = new Point3D(x, y, getZ(x, y));
             int landID = map.getTextureID(point);
             LandTile landTile = tiles.getLandTile(landID);
             selfZ = point.getZ();
@@ -487,7 +489,6 @@ public class GameView {
                 texture = TexturePool.getLandTexture(0);
             }
         }
-        texture.setTextureUnit(0);
         texture.bind();
         shader.setUniformFloat(zOffsetLocation, selfZ, southZ, southEastZ, eastZ);
 
@@ -509,7 +510,6 @@ public class GameView {
             log.warning("No texture for item with graphic: " + item.getGraphic());
             return;
         }
-        texture.setTextureUnit(0);
         texture.bind();
 
         Transform textureProjection = new Transform(projection);
@@ -530,7 +530,6 @@ public class GameView {
 
         shader.setUniformInt(texTypeLocation, 1);
         shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
-        text.setTextureUnit(0);
         text.bind();
 
         Transform textureProjection = new Transform(projection);
@@ -548,7 +547,6 @@ public class GameView {
     private void drawTextAtScreenPosition(Texture text, int x, int y, boolean centered) {
         shader.setUniformInt(texTypeLocation, 1);
         shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
-        text.setTextureUnit(0);
         text.bind();
 
         Transform textureProjection = new Transform(projection);
@@ -574,7 +572,7 @@ public class GameView {
         int graphic = mobile.getGraphic();
         Direction facing = mobile.getFacing();
 
-        // first character
+        // draw character first
         MobileAnimation animation = art.getAnimationEntry(graphic, facing, fighting);
         if(animation == null) {
             log.warning("No animation for mobile " + graphic + " with facing " + facing + ", fight: " + fighting);
@@ -582,9 +580,14 @@ public class GameView {
         }
         drawAnimationFrame(animation, x, y, z);
 
-        // then equipment
+        // then its equipment
         for(SLItem equipItem : mobile.getEquipment()) {
             int id = equipItem.getTileInfo().animationID;
+            if(id == 0) {
+                // no animation for this equipment, possible for vendors as they
+                // carry invisible bags for their wares
+                continue;
+            }
             animation = art.getAnimationEntry(id, facing, fighting);
             if(animation == null) {
                 log.warning("No animation for equipment " + graphic + " with facing " + facing + ", fight: " + fighting);
@@ -597,7 +600,6 @@ public class GameView {
     private void drawAnimationFrame(MobileAnimation animation, int x, int y, int z) {
         int numFrames = animation.frames.size();
         Texture texture = TexturePool.getAnimationFrame(animation.frames.get(animFrameCounter % numFrames));
-        texture.setTextureUnit(0);
         texture.bind();
         shader.setUniformInt(texTypeLocation, 1);
         shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
@@ -617,7 +619,7 @@ public class GameView {
         glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
     }
 
-    public synchronized void close() {
+    public void close() {
         if(shader != null) {
             shader.dispose();
             shader = null;
@@ -644,31 +646,31 @@ public class GameView {
         Display.destroy();
     }
 
-    private List<SLStatic> sortStatics(List<SLStatic> in) {
-        // sort by view order (painter's algorithm)
-        Collections.sort(in, (o1, o2) -> {
-                StaticTile tile1 = tiles.getStaticTile(o1.getStaticID());
-                StaticTile tile2 = tiles.getStaticTile(o2.getStaticID());
-                int z1 = o1.getLocation().getZ();
-                int z2 = o2.getLocation().getZ();
+    private int staticPaintOrderCompare(SLObject o1, SLObject o2) {
+        final int drawO1overO2 = 1, drawO2overO1 = -1;
+        int z1 = o1.getLocation().getZ();
+        int z2 = o2.getLocation().getZ();
 
-                if((tile1.flags & StaticTile.FLAG_BACKGROUND) != 0) {
-                    if((tile2.flags & StaticTile.FLAG_BACKGROUND) == 0) {
-                        // draw background first so it will be overdrawn by statics
-                        if(z1 > z2) {
-                            // but only if there is nothing below it
-                            return 1;
-                        } else {
-                            return -1;
-                        }
-                    } else {
-                        return z1 - z2;
-                    }
-                }
-                // default
-                return z1 - z2;
-            });
-        return in;
+        // Special case:
+        //  let background always be overdrawn by non-background
+        //  unless the background is above the non-background (in which case the non-background gets overdrawn)
+        //  Mobiles don't have a static tile and are never background
+        boolean o1IsBackground = !(o1 instanceof SLMobile) && tiles.getStaticTile(o1.getGraphic()).isBackground();
+        boolean o2IsBackground = !(o2 instanceof SLMobile) && tiles.getStaticTile(o2.getGraphic()).isBackground();
+
+        if(o1IsBackground && !o2IsBackground) {
+            return (z1 > z2) ? drawO1overO2 : drawO2overO1;
+        } else if(!o1IsBackground && o2IsBackground) {
+            return (z2 > z1) ? drawO2overO1 : drawO1overO2;
+        }
+
+        // No background tiles involved, normal z comparison
+        // Some cases are still unknown, let serial decide then so there is no z-fight
+        if(z1 == z2 && !o1.equals(o2)) {
+            return Long.compare(o1.getSerial(), o2.getSerial());
+        } else {
+            return Integer.compare(z1, z2);
+        }
     }
 
     public void showSysMessage(String text, Color color) {

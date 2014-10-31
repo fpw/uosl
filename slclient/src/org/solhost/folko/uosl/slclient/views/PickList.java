@@ -10,9 +10,22 @@ import org.solhost.folko.uosl.slclient.models.SLObject;
 public class PickList {
     private final Map<Integer, SLObject> pickEntries;
     private int nextId;
+    private boolean isValid;
 
     public PickList() {
         pickEntries = new HashMap<>(1000);
+        isValid = false;
+    }
+
+    public void setValid(boolean valid) {
+        this.isValid = valid;
+        if(!valid) {
+            clear();
+        }
+    }
+
+    public boolean isValid() {
+        return isValid;
     }
 
     public void clear() {
@@ -26,6 +39,9 @@ public class PickList {
     }
 
     public SLObject get(int pickId) {
+        if(!isValid) {
+            throw new RuntimeException("pick from invalid list");
+        }
         return pickEntries.get(pickId);
     }
 }
