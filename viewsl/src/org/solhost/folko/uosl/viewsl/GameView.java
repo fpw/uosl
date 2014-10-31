@@ -285,7 +285,7 @@ public class GameView extends JPanel {
             Point3D curLoc = finder.getStart();
             Point lastPoint = project(curLoc), curPoint;
             for(Direction dir : path) {
-                Point3D nextLoc = data.getElevatedPoint(curLoc, dir, statics);
+                Point3D nextLoc = data.getElevatedPoint(curLoc, dir, (p) -> statics.getStatics(p));
                 if(nextLoc == null) {
                     System.err.println("invalid path move: " + dir);
                     break;
@@ -336,7 +336,7 @@ public class GameView extends JPanel {
             Point2D hackDest = sceneCenter.getTranslated(dir);
             sceneCenter = new Point3D(hackDest, 0);
         } else {
-            Point3D dest = data.getElevatedPoint(sceneCenter, dir, statics);
+            Point3D dest = data.getElevatedPoint(sceneCenter, dir, (point) -> statics.getStatics(point));
             if(dest != null) {
                 sceneCenter = dest;
             }
@@ -384,8 +384,6 @@ public class GameView extends JPanel {
                         } else {
                             return -1;
                         }
-                    } else {
-                        return z1 - z2;
                     }
                 }
                 // default
@@ -607,7 +605,7 @@ public class GameView extends JPanel {
     }
 
     private int getZ(int x, int y) {
-        return map.getTileElevation(x, y);
+        return map.getTileElevation(new Point2D(x, y));
     }
 
     private RasterQuad getPointPolygon(Point3D point) {

@@ -88,7 +88,7 @@ public class SLData {
         int finalZ = -128;
         int edi = -128;
         boolean staticsAllowWalking = false;
-        for(SLStatic stat : (Iterable<SLStatic>) lister.getStaticsAndDynamicsAtLocation(dest)::iterator) {
+        for(SLStatic stat : lister.getStaticsAndDynamicsAtLocation(dest)) {
             StaticTile tile = tiles.getStaticTile(stat.getStaticID());
             int eax = stat.getLocation().getZ();
             if(eax > currZp9) {
@@ -302,7 +302,7 @@ public class SLData {
 
         List<Point3D> path = getDirectPath(src, dest);
         for(Point3D point : path) {
-            for(SLStatic obj : (Iterable<SLStatic>) lister.getStaticsAndDynamicsAtLocation(point)::iterator) {
+            for(SLStatic obj : lister.getStaticsAndDynamicsAtLocation(point)) {
                 StaticTile stat = tiles.getStaticTile(obj.getStaticID());
                 int lowerZ = obj.getLocation().getZ();
                 int upperZ = lowerZ + stat.height;

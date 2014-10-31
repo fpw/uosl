@@ -86,7 +86,7 @@ public class SLStatics {
     public Stream<SLStatic> getStaticsStream(Point2D pos) {
         return getStatics(pos.getCellIndex())
                     .stream()
-                    .filter((sta) -> pos.getX() == sta.getLocation().getX() && pos.getY() == sta.getLocation().getY());
+                    .filter((sta) -> sta.getLocation().equals2D(pos));
     }
 
     public Stream<SLStatic> getStaticsStream(int cell) {

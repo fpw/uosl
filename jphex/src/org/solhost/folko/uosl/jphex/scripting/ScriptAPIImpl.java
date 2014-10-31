@@ -64,7 +64,7 @@ public class ScriptAPIImpl implements ScriptAPI {
 
     @Override
     public void moveObject(SLObject obj, int x, int y) {
-        byte z = SLData.get().getMap().getElevation(new Point2D(x, y));
+        byte z = SLData.get().getMap().getTileElevation(new Point2D(x, y));
         moveObject(obj, x, y, z);
     }
 

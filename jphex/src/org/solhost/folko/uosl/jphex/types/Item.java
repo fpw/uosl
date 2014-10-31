@@ -192,7 +192,7 @@ public class Item extends SLObject implements SendableItem {
 
     public Item getItemAtLocation(Point2D location) {
         for(Item item : children) {
-            if(item.getLocation().getX() == location.getX() && item.getLocation().getY() == location.getY()) {
+            if(item.getLocation().equals2D(location)) {
                 return item;
             }
         }
