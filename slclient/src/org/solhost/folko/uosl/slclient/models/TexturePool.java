@@ -1,12 +1,15 @@
 package org.solhost.folko.uosl.slclient.models;
 
+import java.util.logging.Logger;
+
 import org.solhost.folko.uosl.libuosl.data.SLArt;
 import org.solhost.folko.uosl.libuosl.data.SLData;
 import org.solhost.folko.uosl.libuosl.data.SLArt.ArtEntry;
 import org.solhost.folko.uosl.libuosl.data.SLTiles.StaticTile;
-import org.solhost.folko.uosl.slclient.views.Texture;
+import org.solhost.folko.uosl.slclient.views.util.Texture;
 
 public class TexturePool {
+    private static final Logger log = Logger.getLogger("slclient.texturepool");
     private static Texture[] landTextures;
     private static Texture[] staticTextures;
     private static Texture[] animationFrames;
@@ -20,6 +23,7 @@ public class TexturePool {
         animationFrames = new Texture[SLArt.NUM_ANIMATION_ARTS];
 
         SLArt art = SLData.get().getArt();
+        log.fine("Loading textures into GPU...");
 
         for(int i = 0; i < SLArt.NUM_LAND_ARTS; i++) {
             ArtEntry entry = art.getLandArt(i);
@@ -46,6 +50,7 @@ public class TexturePool {
                 animationFrames[i - 0x4000] = new Texture(entry.image);
             }
         }
+        log.fine("Done loading textures");
     }
 
     public static Texture getLandTexture(int id) {

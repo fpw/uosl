@@ -1,54 +1,48 @@
 package org.solhost.folko.uosl.slclient.controllers;
 
 import java.awt.Color;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.FutureTask;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import javax.swing.SwingUtilities;
 
 import org.solhost.folko.uosl.libuosl.types.Direction;
 import org.solhost.folko.uosl.slclient.models.GameState;
 import org.solhost.folko.uosl.slclient.models.SLMobile;
 import org.solhost.folko.uosl.slclient.models.SLObject;
+import org.solhost.folko.uosl.slclient.models.TexturePool;
 import org.solhost.folko.uosl.slclient.models.GameState.State;
 import org.solhost.folko.uosl.slclient.views.GameView;
-import org.solhost.folko.uosl.slclient.views.LoginView;
+import org.solhost.folko.uosl.slclient.views.LoginDialog;
+import org.solhost.folko.uosl.slclient.views.MainView;
 import org.solhost.folko.uosl.slclient.views.SoundManager;
-
-import javafx.application.Platform;
-import javafx.stage.Stage;
 
 public class MainController {
     private static final Logger log = Logger.getLogger("slclient.main");
     private final GameState game;
     private final NetworkController networkController;
     private final SoundManager soundManager;
-    private final Stage stage;
 
-    private Thread gameThread;
-    private boolean gameRunning;
-    private LoginView loginView;
-    private GameView gameView;
-    private final Queue<Runnable> updateTasks;
+    private boolean gameLoopRunning;
+    private final MainView mainView;
+    private final LoginDialog loginView;
+    private final GameView gameView;
 
-    public MainController(Stage stage) {
-        this.stage = stage;
+    public MainController() {
         this.game = new GameState();
         this.networkController = new NetworkController(this);
         this.soundManager = new SoundManager(game);
-        this.updateTasks = new ConcurrentLinkedQueue<Runnable>();
+        this.mainView = new MainView(this);
 
-        networkController.setSync(false);
+        gameView = mainView.getGameView();
+        loginView = mainView.getLoginView();
 
-        game.stateProperty().addListener((g, from, to) -> onGameStateChange(from, to));
+        game.addStateListener(this::onGameStateChange);
+        mainView.setVisible(true);
     }
 
     public void showLoginScreen() {
-        loginView = new LoginView(this);
-        stage.setScene(loginView.getScene());
-        stage.show();
+        SwingUtilities.invokeLater(() -> mainView.showLoginDialog());
     }
 
     private void onGameStateChange(State oldState, State newState) {
@@ -68,31 +62,17 @@ public class MainController {
         }
     }
 
-    public void scheduleUpdate(Runnable update) {
-        updateTasks.add(update);
-    }
-
-    private void runUpdateTasks() {
-        Runnable task;
-        while((task = updateTasks.poll()) != null) {
-            task.run();
-        }
-    }
-
     // user entered login data
     public void onLoginRequest(String host, String name, String password) {
-        game.getPlayer().setName(name);
-        game.getPlayer().setPassword(password);
         loginView.setBusy(true);
+        game.setLoginDetails(name, password);
         networkController.tryConnect(host);
     }
 
     private void onDisconnect(GameState.State oldState) {
         if(oldState == State.CONNECTED) {
             // login view still active, but server kicked us
-            Platform.runLater(() -> {
-                loginView.setBusy(false);
-            });
+            loginView.setBusy(false);
         }
     }
 
@@ -103,71 +83,48 @@ public class MainController {
 
     public void onLoginFail(String message) {
         networkController.stopNetwork();
-        Platform.runLater(() -> {
-            loginView.showError("Login failed: " + message);
-            loginView.setBusy(false);
-        });
+        loginView.showError("Login failed: " + message);
+        loginView.setBusy(false);
     }
 
     private void onLogin(State oldState) {
-        // stop JavaFX, start LWJGL
-        FutureTask<Void> task = new FutureTask<>(() -> {
-            Platform.setImplicitExit(false);
-            stage.hide();
-        }, null);
-
-        if(Platform.isFxApplicationThread()) {
-            task.run();
-        } else {
-            Platform.runLater(task);
-        }
-
-        networkController.setSync(true);
-
-        try {
-            task.get(); // wait for task to complete
-            gameView = new GameView(this);
-            gameThread = new Thread(() -> gameLoop());
-            gameThread.setName("GameLoop");
-            gameThread.start();
-        } catch (InterruptedException | ExecutionException e) {
-            log.log(Level.FINE, "Login stopped: " + e.getMessage(), e);
-        }
+        loginView.close();
     }
 
     public void onNetworkError(String reason) {
         if(game.getState() == State.DISCONNECTED || game.getState() == State.CONNECTED) {
             // means we couldn't connect or were kicked while logging in
-            Platform.runLater(() -> {
-                loginView.showError("Couldn't connect: " + reason);
-                loginView.setBusy(false);
-            });
+            loginView.showError("Couldn't connect: " + reason);
+            loginView.setBusy(false);
         }
     }
 
     public void onGameError(String reason) {
         log.severe("Game error: " + reason);
-        gameRunning = false;
+        onGameWindowClosed();
     }
 
-    public void onGameWindowClosed() {
-        if(gameRunning) {
+    // can be called from Swing thread or game thread
+    public synchronized void onGameWindowClosed() {
+        if(gameLoopRunning) {
             log.fine("Stopping game...");
-            gameRunning = false;
+            gameLoopRunning = false;
         }
         shutdownSystems();
+        SwingUtilities.invokeLater(() -> mainView.dispose());
     }
 
     // this is the main game thread, everything in GameView and GameState should run
     // in this thread. Events can be posted using scheduleUpdate
-    private void gameLoop() {
+    public void gameLoop() {
         long lastFrameTime = game.getTimeMillis();
         long thisFrameTime = game.getTimeMillis();
-        gameRunning = true;
+        gameLoopRunning = true;
 
-        gameView.createWindow();
         try {
-            while(gameRunning) {
+            startSystems();
+            log.fine("Entering game loop");
+            while(gameLoopRunning) {
                     thisFrameTime = game.getTimeMillis();
                     update(thisFrameTime - lastFrameTime);
                     gameView.render();
@@ -178,10 +135,13 @@ public class MainController {
             log.log(Level.SEVERE, "Game crashed: " + e.getMessage(), e);
             onGameError("Game crashed: " + e.getMessage());
         }
-        gameRunning = false;
-        gameView.close();
-        shutdownSystems();
-        Platform.exit();
+        log.fine("Left game loop");
+    }
+
+    private void startSystems() throws Exception {
+        gameView.init();
+        soundManager.init();
+        TexturePool.load();
     }
 
     private void shutdownSystems() {
@@ -191,7 +151,7 @@ public class MainController {
 
     private void update(long elapsedMillis) {
         try {
-            runUpdateTasks();
+            networkController.update(elapsedMillis);
             gameView.update(elapsedMillis);
             soundManager.update(elapsedMillis);
         } catch(Exception e) {
@@ -255,11 +215,7 @@ public class MainController {
     }
 
     public void onReportFPS(long fps) {
-        gameView.setTitleSuffix("| " + fps + " FPS");
-    }
-
-    public Stage getStage() {
-        return stage;
+        mainView.setTitleSuffix("| " + fps + " FPS");
     }
 
     public GameState getGameState() {

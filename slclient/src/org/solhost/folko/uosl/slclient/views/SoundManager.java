@@ -19,28 +19,28 @@ import org.solhost.folko.uosl.libuosl.data.SLData;
 import org.solhost.folko.uosl.libuosl.data.SLSound;
 import org.solhost.folko.uosl.libuosl.data.SLSound.SoundEntry;
 import org.solhost.folko.uosl.slclient.models.GameState;
+import org.solhost.folko.uosl.slclient.models.GameState.State;
 
 public class SoundManager {
     private static final Logger log = Logger.getLogger("slclient.sound");
     private final SLSound sound;
     private final GameState game;
-    private final Sequencer sequencer;
-    private final Sequence songs[];
+    private Sequencer sequencer;
+    private Sequence songs[];
 
     public SoundManager(GameState gameState) {
         this.game = gameState;
         this.sound = SLData.get().getSound();
+    }
 
-        Sequencer midiSeq;
+    public void init() {
         try {
             log.fine("Initializing MIDI system");
-            midiSeq = MidiSystem.getSequencer();
-            midiSeq.open();
+            sequencer = MidiSystem.getSequencer();
+            sequencer.open();
         } catch (MidiUnavailableException e) {
             log.warning("No MIDI support -> no music");
-            midiSeq = null;
         }
-        sequencer = midiSeq;
         songs = new Sequence[25];
         loadSongs();
     }
@@ -79,15 +79,19 @@ public class SoundManager {
                 10, 16, 16, 16, 2, 24, 24, 24, 7, 4, 6, 7, 8, 9, 20, 1
         };
 
+        if(game.getState() != State.LOGGED_IN) {
+            // no music prior to login
+            return;
+        }
 
-        if(game.getPlayer().isInWarMode()) {
+        if(game.isPlayerInWarMode()) {
             // in war mode, always play war song immediately
             playSongNow(songTable[9]);
         } else if(!sequencer.isRunning()) {
             // otherwise, only choose new song when required
             int index = 10;
-            int x = game.getPlayer().getLocation().getX();
-            int y = game.getPlayer().getLocation().getY();
+            int x = game.getPlayerLocation().getX();
+            int y = game.getPlayerLocation().getY();
             int minDist = Integer.MAX_VALUE;
             for(int i = 0; i < locationTable.length; i++) {
                 int distX = Math.abs(x - locationTable[i][0]);

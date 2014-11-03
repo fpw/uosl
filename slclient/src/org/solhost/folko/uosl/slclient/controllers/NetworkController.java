@@ -2,6 +2,8 @@ package org.solhost.folko.uosl.slclient.controllers;
 
 import java.io.IOException;
 import java.nio.channels.UnresolvedAddressException;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -20,7 +22,7 @@ import org.solhost.folko.uosl.libuosl.network.packets.SendTextPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.SoundPacket;
 import org.solhost.folko.uosl.slclient.models.Connection;
 import org.solhost.folko.uosl.slclient.models.GameState;
-import org.solhost.folko.uosl.slclient.models.Player;
+import org.solhost.folko.uosl.slclient.models.GameState.State;
 import org.solhost.folko.uosl.slclient.models.SLObject;
 import org.solhost.folko.uosl.slclient.models.Connection.ConnectionHandler;
 
@@ -28,16 +30,14 @@ public class NetworkController implements ConnectionHandler {
     private static final Logger log = Logger.getLogger("slclient.network");
     private final MainController mainController;
     private final GameState game;
+    private final Queue<SLPacket> pendingPackets;
     private Connection connection;
-    private boolean syncPackets;
+    private long loginSerial;
 
     public NetworkController(MainController mainController) {
         this.mainController = mainController;
+        this.pendingPackets = new ConcurrentLinkedQueue<SLPacket>();
         this.game = mainController.getGameState();
-    }
-
-    public synchronized void setSync(boolean sync) {
-        this.syncPackets = sync;
     }
 
     public void tryConnect(String host) {
@@ -100,20 +100,23 @@ public class NetworkController implements ConnectionHandler {
     }
 
     private void onInitPlayer(InitPlayerPacket packet) {
-        game.getPlayer().setSerial(packet.getSerial());
-        game.onLoginSuccess();
+        // set player serial
+        loginSerial = packet.getSerial();
     }
 
     private void onLocationChange(LocationPacket packet) {
         SendableMobile src = packet.getMobile();
-        if(src.getSerial() != game.getPlayer().getSerial()) {
-            log.warning("LocationPacket received for non-player object");
-            return;
+        if(game.getState() != State.LOGGED_IN) {
+            game.onLoginSuccess(loginSerial, src.getGraphic(), src.getLocation(), src.getFacing());
+        } else {
+            if(src.getSerial() != game.getPlayerSerial()) {
+                log.warning("LocationPacket received for non-player object");
+                return;
+            }
+            game.setPlayerGraphic(src.getGraphic());
+            game.setPlayerFacing(src.getFacing());
+            game.setPlayerLocation(src.getLocation());
         }
-        Player player = game.getPlayer();
-        player.setGraphic(src.getGraphic());
-        player.setFacing(src.getFacing());
-        player.setLocation(src.getLocation());
     }
 
     private void onSendObject(SendObjectPacket packet) {
@@ -176,12 +179,16 @@ public class NetworkController implements ConnectionHandler {
         }
     }
 
+    // called by connection thread
     @Override
-    public synchronized void onIncomingPacket(SLPacket packet) {
-        if(syncPackets) {
-            // synchronize all packets as updates as soon as the main window is visible
-            mainController.scheduleUpdate(() -> handlePacket(packet));
-        } else {
+    public void onIncomingPacket(SLPacket packet) {
+        pendingPackets.add(packet);
+    }
+
+    // called by game thread
+    public void update(long elapsedMillis) {
+        SLPacket packet;
+        while((packet = pendingPackets.poll()) != null) {
             handlePacket(packet);
         }
     }

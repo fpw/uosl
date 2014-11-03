@@ -1,6 +1,10 @@
 package org.solhost.folko.uosl.slclient.views;
 
+import java.awt.BorderLayout;
+import java.awt.Canvas;
 import java.awt.Color;
+import java.awt.Point;
+import java.awt.event.KeyEvent;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.ShortBuffer;
@@ -8,13 +12,12 @@ import java.nio.file.Paths;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.swing.JPanel;
+
 import org.lwjgl.BufferUtils;
 import org.lwjgl.LWJGLException;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.ContextAttribs;
 import org.lwjgl.opengl.Display;
-import org.lwjgl.opengl.DisplayMode;
 import org.lwjgl.opengl.PixelFormat;
 import org.solhost.folko.uosl.libuosl.data.SLArt;
 import org.solhost.folko.uosl.libuosl.data.SLData;
@@ -32,26 +35,28 @@ import org.solhost.folko.uosl.slclient.models.SLItem;
 import org.solhost.folko.uosl.slclient.models.SLMobile;
 import org.solhost.folko.uosl.slclient.models.SLObject;
 import org.solhost.folko.uosl.slclient.models.TexturePool;
-import org.solhost.folko.uosl.slclient.views.TextLog.TextEntry;
+import org.solhost.folko.uosl.slclient.models.GameState.State;
+import org.solhost.folko.uosl.slclient.views.util.InputGump;
+import org.solhost.folko.uosl.slclient.views.util.InputManager;
+import org.solhost.folko.uosl.slclient.views.util.PickList;
+import org.solhost.folko.uosl.slclient.views.util.ShaderProgram;
+import org.solhost.folko.uosl.slclient.views.util.TextLog;
+import org.solhost.folko.uosl.slclient.views.util.Texture;
+import org.solhost.folko.uosl.slclient.views.util.Transform;
+import org.solhost.folko.uosl.slclient.views.util.TextLog.TextEntry;
 
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL15.*;
 import static org.lwjgl.opengl.GL20.*;
 import static org.lwjgl.opengl.GL30.*;
 
-public class GameView {
+public class GameView extends JPanel {
+    private static final long serialVersionUID = 1L;
     private static final Logger log = Logger.getLogger("slclient.gameview");
-    private static final String WINDOW_TITLE = "Ultima Online: Shattered Legacy";
-    private static final int DEFAULT_WIDTH  = 800;
-    private static final int DEFAULT_HEIGHT = 600;
     private static final float GRID_DIAMETER = 42.0f;
     private static final float GRID_EDGE     = GRID_DIAMETER / (float) Math.sqrt(2);
     private static final float PROJECTION_CONSTANT = 4.0f;
     private static final int FPS = 20;
-
-    private static final int MOUSE_BUTTON_LEFT = 0;
-    private static final int MOUSE_BUTTON_RIGHT = 1;
-    private static final int MOUSE_DOUBLE_CLICK_MS = 300;
 
     private final SLMap map;
     private final SLTiles tiles;
@@ -69,6 +74,7 @@ public class GameView {
     private Integer vaoID, vboID, eboID;
     private int texLocation, zOffsetLocation, matLocation, texTypeLocation, selectionIDLocation;
 
+    private final InputManager input;
     private final PickList pickList;
     private final IntBuffer pickBuffer;
 
@@ -80,8 +86,7 @@ public class GameView {
 
     private long fpsCounter, lastFPSReport;
 
-    private long lastMouseLeftClickTime;
-    private SLObject lastMouseLeftClickObject;
+    private final Canvas glCanvas;
 
     public GameView(MainController mainController) {
         this.mainController = mainController;
@@ -94,9 +99,17 @@ public class GameView {
         this.sysMessageEntry = new Object();
         this.pickBuffer = BufferUtils.createIntBuffer(1);
         this.pickList = new PickList();
+        this.glCanvas = new Canvas();
+        this.input = new InputManager();
+
+        setLayout(new BorderLayout());
+        add(glCanvas, BorderLayout.CENTER);
+
+        glCanvas.addMouseListener(input);
+        glCanvas.addKeyListener(input);
 
         try {
-            Display.setDisplayMode(new DisplayMode(DEFAULT_WIDTH, DEFAULT_HEIGHT));
+            Display.setParent(glCanvas);
         } catch (LWJGLException e) {
             log.log(Level.SEVERE, "Couldn't set display mode: " + e.getMessage(), e);
             mainController.onGameError("Couldn't set display mode: " + e.getMessage());
@@ -105,35 +118,31 @@ public class GameView {
         projection = new Transform();
     }
 
-    public void createWindow() {
+    public void init() throws Exception {
         try {
             PixelFormat pixFormat = new PixelFormat();
             ContextAttribs contextAttribs = new ContextAttribs(3, 2)
                 .withForwardCompatible(true)
                 .withProfileCore(true);
-            Display.setTitle(WINDOW_TITLE);
-            Display.setResizable(true);
             Display.create(pixFormat, contextAttribs);
             initGL();
+            glCanvas.requestFocus();
         } catch (LWJGLException e) {
             log.log(Level.SEVERE, "Couldn't create display: " + e.getMessage(), e);
-            mainController.onGameError("Couldn't create display: " + e.getMessage());
-            return;
+            throw e;
         }
 
         lastFPSReport = game.getTimeMillis();
     }
 
     public void render() {
-        if(Display.isCloseRequested()) {
-            mainController.onGameWindowClosed();
-            return;
-        }
-
         // rendering will fill the back buffer, thus invalidating the select-frame
         pickList.setValid(false);
 
-        renderGameScene(false);
+        if(game.getState() == State.LOGGED_IN) {
+            // only render when logged in
+            renderGameScene(false);
+        }
 
         updateFPS();
         Display.update();
@@ -173,49 +182,33 @@ public class GameView {
     }
 
     private void handleAsyncInput() {
-        while(Keyboard.next()) {
-            if(Keyboard.getEventKeyState()) {
-                // pressed
-                int c = Keyboard.getEventCharacter();
-                if(c >= 32 && c < 128) {
-                    // printable ASCII and DEL (127)
-                    inputGump.feedCharacter(Keyboard.getEventCharacter());
-                } else if(c == '\n' || c == '\r') {
-                    String text = inputGump.getAndReset();
-                    mainController.onTextEntered(text);
-                }
-            } else {
-                // released
+        String typed = input.pollTypedKeys();
+        for(char c : typed.toCharArray()) {
+            if((c >= 32 && c < 128) || c == '\b') {
+                // printable ASCII and DEL (127)
+                inputGump.feedCharacter(c);
+            } else if(c == '\n' || c == '\r') {
+                String text = inputGump.getAndReset();
+                mainController.onTextEntered(text);
             }
         }
 
-        while(Mouse.next()) {
-            if(Mouse.getEventButtonState()) {
-                if(Mouse.getEventButton() == MOUSE_BUTTON_LEFT) {
-                    // mouse button pressed
-                    long msDiff = game.getTimeMillis() - lastMouseLeftClickTime;
-                    if(msDiff < MOUSE_DOUBLE_CLICK_MS) {
-                        lastMouseLeftClickTime = 0;
-                        if(lastMouseLeftClickObject != null) {
-                            handleDoubleClick(lastMouseLeftClickObject);
-                        }
-                    } else {
-                        // potential single click
-                        lastMouseLeftClickObject = getMouseObject(Mouse.getEventX(), Mouse.getEventY());
-                        lastMouseLeftClickTime = game.getTimeMillis();
-                    }
-                } else if(Mouse.getEventButton() == MOUSE_BUTTON_RIGHT) {
-                    // nothing yet
-                }
+        Point doubleClick = input.pollLastDoubleClick();
+        if(doubleClick != null) {
+            SLObject obj = getMouseObject(doubleClick.x, getHeight() - doubleClick.y);
+            if(obj != null) {
+                handleDoubleClick(obj);
             }
         }
 
-        if(lastMouseLeftClickTime != 0 && game.getTimeMillis() - lastMouseLeftClickTime > MOUSE_DOUBLE_CLICK_MS) {
-            lastMouseLeftClickTime = 0;
-            if(lastMouseLeftClickObject != null) {
-                handleSingleClick(lastMouseLeftClickObject);
+        Point singleClick = input.pollLastSingleClick();
+        if(singleClick != null) {
+            SLObject obj = getMouseObject(singleClick.x, getHeight() - singleClick.y);
+            if(obj != null) {
+                handleSingleClick(obj);
             }
         }
+
     }
 
     private void handleSingleClick(SLObject obj) {
@@ -234,21 +227,22 @@ public class GameView {
     }
 
     private void handleSyncInput() {
-        if(Keyboard.isKeyDown(Keyboard.KEY_DOWN)) {
+        if(input.isKeyDown(KeyEvent.VK_DOWN)) {
             mainController.onRequestMove(Direction.SOUTH_EAST);
-        } else if(Keyboard.isKeyDown(Keyboard.KEY_UP)) {
+        } else if(input.isKeyDown(KeyEvent.VK_UP)) {
             mainController.onRequestMove(Direction.NORTH_WEST);
-        } else if(Keyboard.isKeyDown(Keyboard.KEY_LEFT)) {
+        } else if(input.isKeyDown(KeyEvent.VK_LEFT)) {
             mainController.onRequestMove(Direction.SOUTH_WEST);
-        } else if(Keyboard.isKeyDown(Keyboard.KEY_RIGHT)) {
+        } else if(input.isKeyDown(KeyEvent.VK_RIGHT)) {
             mainController.onRequestMove(Direction.NORTH_EAST);
         }
 
-        if(Mouse.isButtonDown(1)) {
+        Point mousePos = glCanvas.getMousePosition();
+        if(input.isRightMouseButtonDown() && mousePos != null) {
             double midX = Display.getWidth() / 2.0;
             double midY = Display.getHeight() / 2.0;
 
-            double angle = Math.toDegrees(Math.atan2(Mouse.getX() - midX, Mouse.getY() - midY));
+            double angle = Math.toDegrees(Math.atan2(mousePos.x - midX, getHeight() - mousePos.y - midY));
             if(angle < 0) {
                 angle = 360 + angle;
             }
@@ -257,7 +251,7 @@ public class GameView {
         }
     }
 
-    private void initGL() {
+    private void initGL() throws Exception {
         glClear(GL_COLOR_BUFFER_BIT);
 
         shader = new ShaderProgram();
@@ -273,13 +267,8 @@ public class GameView {
         } catch (Exception e) {
             shader.dispose();
             log.log(Level.SEVERE, "Couldn't load shader: " + e.getMessage(), e);
-            mainController.onGameError("Couldn't load shader: " + e.getMessage());
-            return;
+            throw e;
         }
-
-        log.fine("Loading textures into GPU...");
-        TexturePool.load();
-        log.fine("Done loading textures");
 
         // glDepthFunc(GL_LEQUAL);
         // glEnable(GL_DEPTH_TEST);
@@ -346,9 +335,9 @@ public class GameView {
     }
 
     private void renderGameScene(boolean selectMode) {
-        int centerX = game.getPlayer().getLocation().getX();
-        int centerY = game.getPlayer().getLocation().getY();
-        int centerZ = game.getPlayer().getLocation().getZ();
+        int centerX = game.getPlayerLocation().getX();
+        int centerY = game.getPlayerLocation().getY();
+        int centerZ = game.getPlayerLocation().getZ();
         int radius = game.getUpdateRange();
 
         glClear(GL_COLOR_BUFFER_BIT /* | GL_DEPTH_BUFFER_BIT */);
@@ -442,10 +431,6 @@ public class GameView {
     }
 
     private SLObject getMouseObject(int x, int y) {
-        if(!Mouse.isInsideWindow()) {
-            return null;
-        }
-
         if(!pickList.isValid()) {
             // there is no select-frame for the current frame yet, so render one
             pickList.clear();
@@ -679,9 +664,5 @@ public class GameView {
 
     public void showTextAbove(SLObject obj, String text, Color color) {
         textLog.addEntry(obj, text, color);
-    }
-
-    public void setTitleSuffix(String suffix) {
-        Display.setTitle(WINDOW_TITLE + " " + suffix);
     }
 }

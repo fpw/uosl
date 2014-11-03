@@ -1,4 +1,4 @@
-package org.solhost.folko.uosl.slclient.views;
+package org.solhost.folko.uosl.slclient.views.util;
 
 import java.util.HashMap;
 import java.util.Map;
