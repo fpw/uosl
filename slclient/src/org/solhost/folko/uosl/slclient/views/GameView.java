@@ -135,122 +135,6 @@ public class GameView extends JPanel {
         lastFPSReport = game.getTimeMillis();
     }
 
-    public void render() {
-        // rendering will fill the back buffer, thus invalidating the select-frame
-        pickList.setValid(false);
-
-        if(game.getState() == State.LOGGED_IN) {
-            // only render when logged in
-            renderGameScene(false);
-        }
-
-        updateFPS();
-        Display.update();
-
-        if(Display.wasResized()) {
-            onResize();
-        }
-    }
-
-    public void pause() {
-        Display.sync(FPS);
-    }
-
-    private void updateFPS() {
-        // update FPS stats each second
-        if(game.getTimeMillis() - lastFPSReport > 1000) {
-            mainController.onReportFPS(fpsCounter);
-            fpsCounter = 0;
-            lastFPSReport += 1000;
-        }
-        fpsCounter++;
-    }
-
-    public void update(long elapsedMillis) {
-        nextAnimFrameIncrease -= elapsedMillis;
-        if(nextAnimFrameIncrease < 0) {
-            animFrameCounter++;
-            nextAnimFrameIncrease = animDelay;
-        }
-        textLog.update(elapsedMillis);
-        handleInput();
-    }
-
-    private void handleInput() {
-        handleAsyncInput();
-        handleSyncInput();
-    }
-
-    private void handleAsyncInput() {
-        String typed = input.pollTypedKeys();
-        for(char c : typed.toCharArray()) {
-            if((c >= 32 && c < 128) || c == '\b') {
-                // printable ASCII and DEL (127)
-                inputGump.feedCharacter(c);
-            } else if(c == '\n' || c == '\r') {
-                String text = inputGump.getAndReset();
-                mainController.onTextEntered(text);
-            }
-        }
-
-        Point doubleClick = input.pollLastDoubleClick();
-        if(doubleClick != null) {
-            SLObject obj = getMouseObject(doubleClick.x, getHeight() - doubleClick.y);
-            if(obj != null) {
-                handleDoubleClick(obj);
-            }
-        }
-
-        Point singleClick = input.pollLastSingleClick();
-        if(singleClick != null) {
-            SLObject obj = getMouseObject(singleClick.x, getHeight() - singleClick.y);
-            if(obj != null) {
-                handleSingleClick(obj);
-            }
-        }
-
-    }
-
-    private void handleSingleClick(SLObject obj) {
-        if(obj instanceof SLItem) {
-            String name = obj.getName();
-            if(name.length() > 0) {
-                textLog.addEntry(obj, name, Color.WHITE);
-            }
-        } else if(obj instanceof SLMobile) {
-            mainController.onSingleClickMobile((SLMobile) obj);
-        }
-    }
-
-    private void handleDoubleClick(SLObject obj) {
-        mainController.onDoubleClickObject(obj);
-    }
-
-    private void handleSyncInput() {
-        if(input.isKeyDown(KeyEvent.VK_DOWN)) {
-            mainController.onRequestMove(Direction.SOUTH_EAST);
-        } else if(input.isKeyDown(KeyEvent.VK_UP)) {
-            mainController.onRequestMove(Direction.NORTH_WEST);
-        } else if(input.isKeyDown(KeyEvent.VK_LEFT)) {
-            mainController.onRequestMove(Direction.SOUTH_WEST);
-        } else if(input.isKeyDown(KeyEvent.VK_RIGHT)) {
-            mainController.onRequestMove(Direction.NORTH_EAST);
-        }
-
-        Point mousePos = glCanvas.getMousePosition();
-        if(input.isRightMouseButtonDown() && mousePos != null) {
-            double midX = Display.getWidth() / 2.0;
-            double midY = Display.getHeight() / 2.0;
-
-            double angle = Math.toDegrees(Math.atan2(mousePos.x - midX, getHeight() - mousePos.y - midY));
-            if(angle < 0) {
-                angle = 360 + angle;
-            }
-
-            mainController.onRequestMove(Direction.fromAngle(angle));
-        }
-    }
-
     private void initGL() throws Exception {
         glClear(GL_COLOR_BUFFER_BIT);
 
@@ -309,29 +193,31 @@ public class GameView extends JPanel {
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
 
-    private void onResize() {
-        int width = Display.getWidth();
-        int height = Display.getHeight();
-        glViewport(0, 0, width, height);
-        projection = Transform.orthographic(-width / 2.0f, -height / 2.0f, width / 2.0f, height / 2.0f, 128f, -128f);
-        projection.scale(zoom, zoom, 1);
-        onZoom(1.0f);
+    public void render() {
+        // rendering will fill the back buffer, thus invalidating the select-frame
+        pickList.setValid(false);
+
+        if(game.getState() == State.LOGGED_IN) {
+            // only render when logged in
+            renderGameScene(false);
+        }
+
+        calculateFPS();
+        Display.update();
+
+        if(Display.wasResized()) {
+            onResize();
+        }
     }
 
-    private void onZoom(float f) {
-        int width = Display.getWidth();
-        int height = Display.getHeight();
-
-        projection.scale(f, f, 1);
-        zoom *= f;
-        float radiusX = (width / zoom / GRID_DIAMETER);
-        float radiusY = (height / zoom / GRID_DIAMETER);
-        int radius = (int) (Math.max(radiusX, radiusY) + 0.5);
-        mainController.onUpdateRangeChange(radius);
-    }
-
-    private int getZ(int x, int y) {
-        return map.getTileElevation(new Point2D(x, y));
+    private void calculateFPS() {
+        // update FPS stats each second
+        if(game.getTimeMillis() - lastFPSReport > 1000) {
+            mainController.onReportFPS(fpsCounter);
+            fpsCounter = 0;
+            lastFPSReport += 1000;
+        }
+        fpsCounter++;
     }
 
     private void renderGameScene(boolean selectMode) {
@@ -412,35 +298,6 @@ public class GameView extends JPanel {
         glDisableVertexAttribArray(0);
         glBindVertexArray(0);
         shader.unbind();
-    }
-
-    private int getGraphicHeight(SLObject obj) {
-        int staticId = obj.getGraphic();
-        if(obj instanceof SLMobile) {
-            MobileAnimation anim = art.getAnimationEntry(obj.getGraphic(), ((SLMobile) obj).getFacing(), false);
-            if(anim != null && anim.frames.size() > 0) {
-                staticId = anim.frames.get(0);
-            }
-        }
-        ArtEntry entry = art.getStaticArt(staticId, false);
-        if(entry != null) {
-            return entry.image.getHeight();
-        } else {
-            return 0;
-        }
-    }
-
-    private SLObject getMouseObject(int x, int y) {
-        if(!pickList.isValid()) {
-            // there is no select-frame for the current frame yet, so render one
-            pickList.clear();
-            renderGameScene(true);
-            pickList.setValid(true);
-        }
-
-        glReadPixels(x, y, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pickBuffer);
-        int pickId = pickBuffer.get(0);
-        return pickList.get(pickId);
     }
 
     private void drawLand(int x, int y) {
@@ -602,6 +459,151 @@ public class GameView extends JPanel {
         model.scale(texture.getWidth() / GRID_EDGE, texture.getHeight() / GRID_EDGE, 1f);
         shader.setUniformMatrix(matLocation, model.combine(view).combine(textureProjection));
         glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
+    }
+
+    public void pause() {
+        Display.sync(FPS);
+    }
+
+    public void update(long elapsedMillis) {
+        nextAnimFrameIncrease -= elapsedMillis;
+        if(nextAnimFrameIncrease < 0) {
+            animFrameCounter++;
+            nextAnimFrameIncrease = animDelay;
+        }
+        textLog.update(elapsedMillis);
+        handleInput();
+    }
+
+    private void handleInput() {
+        handleAsyncInput();
+        handleSyncInput();
+    }
+
+    private void handleAsyncInput() {
+        String typed = input.pollTypedKeys();
+        for(char c : typed.toCharArray()) {
+            if((c >= 32 && c < 128) || c == '\b') {
+                // printable ASCII and DEL (127)
+                inputGump.feedCharacter(c);
+            } else if(c == '\n' || c == '\r') {
+                String text = inputGump.getAndReset();
+                mainController.onTextEntered(text);
+            }
+        }
+
+        Point doubleClick = input.pollLastDoubleClick();
+        if(doubleClick != null) {
+            SLObject obj = getMouseObject(doubleClick.x, getHeight() - doubleClick.y);
+            if(obj != null) {
+                handleDoubleClick(obj);
+            }
+        }
+
+        Point singleClick = input.pollLastSingleClick();
+        if(singleClick != null) {
+            SLObject obj = getMouseObject(singleClick.x, getHeight() - singleClick.y);
+            if(obj != null) {
+                handleSingleClick(obj);
+            }
+        }
+
+    }
+
+    private void handleSingleClick(SLObject obj) {
+        if(obj instanceof SLItem) {
+            String name = obj.getName();
+            if(name.length() > 0) {
+                textLog.addEntry(obj, name, Color.WHITE);
+            }
+        } else if(obj instanceof SLMobile) {
+            mainController.onSingleClickMobile((SLMobile) obj);
+        }
+    }
+
+    private void handleDoubleClick(SLObject obj) {
+        mainController.onDoubleClickObject(obj);
+    }
+
+    private void handleSyncInput() {
+        if(input.isKeyDown(KeyEvent.VK_DOWN)) {
+            mainController.onRequestMove(Direction.SOUTH_EAST);
+        } else if(input.isKeyDown(KeyEvent.VK_UP)) {
+            mainController.onRequestMove(Direction.NORTH_WEST);
+        } else if(input.isKeyDown(KeyEvent.VK_LEFT)) {
+            mainController.onRequestMove(Direction.SOUTH_WEST);
+        } else if(input.isKeyDown(KeyEvent.VK_RIGHT)) {
+            mainController.onRequestMove(Direction.NORTH_EAST);
+        }
+
+        if(input.isRightMouseButtonDown()) {
+            Point mousePos = getMousePosition();
+            if(mousePos != null) {
+                double midX = Display.getWidth() / 2.0;
+                double midY = Display.getHeight() / 2.0;
+
+                double angle = Math.toDegrees(Math.atan2(mousePos.x - midX, getHeight() - mousePos.y - midY));
+                if(angle < 0) {
+                    angle = 360 + angle;
+                }
+
+                mainController.onRequestMove(Direction.fromAngle(angle));
+            }
+        }
+    }
+
+    private void onResize() {
+        int width = Display.getWidth();
+        int height = Display.getHeight();
+        glViewport(0, 0, width, height);
+        projection = Transform.orthographic(-width / 2.0f, -height / 2.0f, width / 2.0f, height / 2.0f, 128f, -128f);
+        projection.scale(zoom, zoom, 1);
+        onZoom(1.0f);
+    }
+
+    private void onZoom(float f) {
+        int width = Display.getWidth();
+        int height = Display.getHeight();
+
+        projection.scale(f, f, 1);
+        zoom *= f;
+        float radiusX = (width / zoom / GRID_DIAMETER);
+        float radiusY = (height / zoom / GRID_DIAMETER);
+        int radius = (int) (Math.max(radiusX, radiusY) + 0.5);
+        mainController.onUpdateRangeChange(radius);
+    }
+
+    private int getZ(int x, int y) {
+        return map.getTileElevation(new Point2D(x, y));
+    }
+
+    private int getGraphicHeight(SLObject obj) {
+        int staticId = obj.getGraphic();
+        if(obj instanceof SLMobile) {
+            MobileAnimation anim = art.getAnimationEntry(obj.getGraphic(), ((SLMobile) obj).getFacing(), false);
+            if(anim != null && anim.frames.size() > 0) {
+                staticId = anim.frames.get(0);
+            }
+        }
+        ArtEntry entry = art.getStaticArt(staticId, false);
+        if(entry != null) {
+            return entry.image.getHeight();
+        } else {
+            return 0;
+        }
+    }
+
+    private SLObject getMouseObject(int x, int y) {
+        if(!pickList.isValid()) {
+            // there is no select-frame for the current frame yet, so render one
+            pickList.clear();
+            renderGameScene(true);
+            pickList.setValid(true);
+        }
+
+        glReadPixels(x, y, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pickBuffer);
+        int pickId = pickBuffer.get(0);
+        return pickList.get(pickId);
     }
 
     public void close() {
