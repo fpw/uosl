@@ -59,22 +59,28 @@ public class GameView extends JPanel {
     private static final float PROJECTION_CONSTANT = 4.0f;
     private static final int FPS = 20;
 
-    private final SLMap map;
-    private final SLTiles tiles;
-    private final SLArt art;
-
-    private final InputGump inputGump;
-    private final TextLog textLog;
-    private final Object sysMessageEntry;
+    private final Canvas glCanvas;
 
     private final MainController mainController;
     private final GameState game;
 
+    // Client data
+    private final SLMap map;
+    private final SLTiles tiles;
+    private final SLArt art;
+
+    // Text stuff
+    private final InputGump inputGump;
+    private final TextLog textLog;
+    private final Object sysMessageEntry;
+
+    // OpenGL stuff
     private Transform projection, view, model;
     private ShaderProgram shader;
     private Integer vaoID, vboID, eboID;
     private int texLocation, zOffsetLocation, matLocation, texTypeLocation, selectionIDLocation;
 
+    // Input helpers
     private final InputManager input;
     private final PickList pickList;
     private final IntBuffer pickBuffer;
@@ -87,10 +93,10 @@ public class GameView extends JPanel {
 
     private long fpsCounter, lastFPSReport;
 
-    private final Canvas glCanvas;
 
     public GameView(MainController mainController) {
         this.mainController = mainController;
+        this.glCanvas = new Canvas();
         this.game = mainController.getGameState();
         this.map = SLData.get().getMap();
         this.art = SLData.get().getArt();
@@ -100,7 +106,6 @@ public class GameView extends JPanel {
         this.sysMessageEntry = new Object();
         this.pickBuffer = BufferUtils.createIntBuffer(1);
         this.pickList = new PickList();
-        this.glCanvas = new Canvas();
         this.input = new InputManager();
 
         setLayout(new BorderLayout());
@@ -201,6 +206,7 @@ public class GameView extends JPanel {
         if(game.getState() == State.LOGGED_IN) {
             // only render when logged in
             renderGameScene(false);
+            renderText();
         }
 
         calculateFPS();
@@ -289,28 +295,36 @@ public class GameView extends JPanel {
             }
         }
 
-        if(!selectMode) {
-            // text input line
-            drawTextAtScreenPosition(inputGump.getTexture(), 5, Display.getHeight() - inputGump.getTextHeight() - 5, false);
+        glDisableVertexAttribArray(0);
+        glBindVertexArray(0);
+        shader.unbind();
+    }
 
-            // draw all other visible text
-            textLog.visitEntries((aboveWhom, entries) -> {
-                int yOff = 0;
-                for(TextEntry entry : entries) {
-                    if(entry.texture != null) {
-                        if(aboveWhom instanceof SLObject) {
-                            int graphicHeight = getGraphicHeight((SLObject) aboveWhom);
-                            int yPos = graphicHeight + (entries.size() - 1) * textLog.getLineHeight() - yOff;
-                            drawTextAtGamePosition(entry.texture, ((SLObject) aboveWhom).getLocation(), yPos, false);
-                        } else if(aboveWhom == sysMessageEntry) {
-                            drawTextAtScreenPosition(entry.texture, 5, Display.getHeight() - inputGump.getTextHeight() * 5 - yOff, false);
-                        }
-                        yOff += textLog.getLineHeight();
+    private void renderText() {
+        shader.bind();
+        glBindVertexArray(vaoID);
+        glEnableVertexAttribArray(0);
+
+        // text input line
+        drawTextAtScreenPosition(inputGump.getTexture(), 5, Display.getHeight() - inputGump.getTextHeight() - 5, false);
+
+        // draw all other visible text
+        textLog.visitEntries((aboveWhom, entries) -> {
+            int yOff = 0;
+            for(TextEntry entry : entries) {
+                if(entry.texture != null) {
+                    if(aboveWhom instanceof SLObject) {
+                        int graphicHeight = getGraphicHeight((SLObject) aboveWhom);
+                        int yPos = graphicHeight + (entries.size() - 1) * textLog.getLineHeight() - yOff;
+                        drawTextAtGamePosition(entry.texture, ((SLObject) aboveWhom).getLocation(), yPos, false);
+                    } else if(aboveWhom == sysMessageEntry) {
+                        int yPos = (entries.size() + 1) * inputGump.getTextHeight() - yOff;
+                        drawTextAtScreenPosition(entry.texture, 5, getHeight() - yPos - 5, false);
                     }
+                    yOff += textLog.getLineHeight();
                 }
-            });
-        }
-
+            }
+        });
         glDisableVertexAttribArray(0);
         glBindVertexArray(0);
         shader.unbind();
@@ -510,35 +524,19 @@ public class GameView extends JPanel {
 
         Point doubleClick = input.pollLastDoubleClick();
         if(doubleClick != null) {
-            SLObject obj = getMouseObject(doubleClick.x, getHeight() - doubleClick.y);
+            SLObject obj = getObjectFromWindow(doubleClick.x, doubleClick.y);
             if(obj != null) {
-                handleDoubleClick(obj);
+                mainController.onDoubleClickObject(obj);
             }
         }
 
         Point singleClick = input.pollLastSingleClick();
         if(singleClick != null) {
-            SLObject obj = getMouseObject(singleClick.x, getHeight() - singleClick.y);
+            SLObject obj = getObjectFromWindow(singleClick.x, singleClick.y);
             if(obj != null) {
-                handleSingleClick(obj);
+                mainController.onSingleClickObject(obj);
             }
         }
-
-    }
-
-    private void handleSingleClick(SLObject obj) {
-        if(obj instanceof SLItem) {
-            String name = obj.getName();
-            if(name.length() > 0) {
-                textLog.addEntry(obj, name, Color.WHITE);
-            }
-        } else if(obj instanceof SLMobile) {
-            mainController.onSingleClickMobile((SLMobile) obj);
-        }
-    }
-
-    private void handleDoubleClick(SLObject obj) {
-        mainController.onDoubleClickObject(obj);
     }
 
     private void handleSyncInput() {
@@ -609,7 +607,7 @@ public class GameView extends JPanel {
         }
     }
 
-    private SLObject getMouseObject(int x, int y) {
+    private SLObject getObjectFromWindow(int x, int y) {
         if(!pickList.isValid()) {
             // there is no select-frame for the current frame yet, so render one
             pickList.clear();
@@ -617,7 +615,7 @@ public class GameView extends JPanel {
             pickList.setValid(true);
         }
 
-        glReadPixels(x, y, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pickBuffer);
+        glReadPixels(x, getHeight() - y, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pickBuffer);
         int pickId = pickBuffer.get(0);
         return pickList.get(pickId);
     }

@@ -6,6 +6,7 @@ import java.util.logging.Logger;
 
 import org.solhost.folko.uosl.libuosl.types.Direction;
 import org.solhost.folko.uosl.slclient.models.GameState;
+import org.solhost.folko.uosl.slclient.models.SLItem;
 import org.solhost.folko.uosl.slclient.models.SLMobile;
 import org.solhost.folko.uosl.slclient.models.SLObject;
 import org.solhost.folko.uosl.slclient.models.TexturePool;
@@ -173,8 +174,15 @@ public class MainController {
         }
     }
 
-    public void onSingleClickMobile(SLMobile mob) {
-        game.queryMobileInformation(mob);
+    public void onSingleClickObject(SLObject obj) {
+        if(obj instanceof SLItem) {
+            String name = obj.getName();
+            if(name.length() > 0) {
+                gameView.showTextAbove(obj, name, Color.WHITE);
+            }
+        } else if(obj instanceof SLMobile) {
+            game.queryMobileInformation((SLMobile) obj);
+        }
     }
 
     public void onDoubleClickObject(SLObject obj) {
