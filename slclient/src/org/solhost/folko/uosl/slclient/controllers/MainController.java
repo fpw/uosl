@@ -4,8 +4,6 @@ import java.awt.Color;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import javax.swing.SwingUtilities;
-
 import org.solhost.folko.uosl.libuosl.types.Direction;
 import org.solhost.folko.uosl.slclient.models.GameState;
 import org.solhost.folko.uosl.slclient.models.SLMobile;
@@ -42,7 +40,7 @@ public class MainController {
     }
 
     public void showLoginScreen() {
-        SwingUtilities.invokeLater(() -> mainView.showLoginDialog());
+        mainView.showLoginDialog();
     }
 
     private void onGameStateChange(State oldState, State newState) {
@@ -110,8 +108,7 @@ public class MainController {
             log.fine("Stopping game...");
             gameLoopRunning = false;
         }
-        shutdownSystems();
-        SwingUtilities.invokeLater(() -> mainView.dispose());
+        mainView.close();
     }
 
     // this is the main game thread, everything in GameView and GameState should run
@@ -136,6 +133,7 @@ public class MainController {
             onGameError("Game crashed: " + e.getMessage());
         }
         log.fine("Left game loop");
+        shutdownSystems();
     }
 
     private void startSystems() throws Exception {

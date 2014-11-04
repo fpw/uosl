@@ -1,11 +1,14 @@
 package org.solhost.folko.uosl.slclient.models;
 
+import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.lwjgl.Sys;
 import org.solhost.folko.uosl.libuosl.data.SLData;
+import org.solhost.folko.uosl.libuosl.data.SLStatic;
 import org.solhost.folko.uosl.libuosl.network.SendableItem;
 import org.solhost.folko.uosl.libuosl.network.SendableMobile;
 import org.solhost.folko.uosl.libuosl.network.SendableObject;
@@ -108,6 +111,14 @@ public class GameState {
                     .map((sta) -> SLItem.fromStatic(sta)));
     }
 
+    // need better object hierarchy here
+    private List<SLStatic> getObjectsAsStaticAt(Point2D point) {
+        return getObjectsAt(point)
+            .filter((o) -> o instanceof SLItem)
+            .map((itm) -> new SLStatic(itm.getSerial(), itm.getGraphic(), itm.getLocation(), 0))
+            .collect(Collectors.toList());
+    }
+
     public void playerMoveRequest(Direction dir) {
         if(lastMoveTime + MOVE_DELAY > getTimeMillis()) {
             // too fast
@@ -126,8 +137,9 @@ public class GameState {
             player.setFacing(dir);
             lastMoveTime = getTimeMillis();
         } else {
+            // actual move
             Point3D oldLoc = player.getLocation();
-            Point3D newLoc = SLData.get().getElevatedPoint(oldLoc, dir, (point) -> SLData.get().getStatics().getStatics(point));
+            Point3D newLoc = SLData.get().getElevatedPoint(oldLoc, dir, (point) -> getObjectsAsStaticAt(point));
             if(newLoc != null) {
                 MoveRequestPacket packet = new MoveRequestPacket(dir, nextMoveSequence++, false);
                 connection.sendPacket(packet);

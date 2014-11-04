@@ -20,7 +20,7 @@ public class LoginDialog extends JDialog {
     private final JTextField hostField, nameField, passwordField;
 
     public LoginDialog(JFrame parent, MainController controller) {
-        super(parent);
+        super(parent, "Login");
         this.controller = controller;
 
         setLayout(new GridLayout(4, 2));
@@ -66,7 +66,7 @@ public class LoginDialog extends JDialog {
     }
 
     public void close() {
-        setVisible(false);
+        SwingUtilities.invokeLater(() -> setVisible(false));
     }
 
     public void showError(String error) {

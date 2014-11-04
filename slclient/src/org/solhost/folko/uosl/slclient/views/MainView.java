@@ -46,7 +46,7 @@ public class MainView extends JFrame {
     }
 
     public void showLoginDialog() {
-        loginDialog.setVisible(true);
+        SwingUtilities.invokeLater(() -> loginDialog.setVisible(true));
     }
 
     public LoginDialog getLoginView() {
@@ -55,5 +55,9 @@ public class MainView extends JFrame {
 
     public void setTitleSuffix(String string) {
         SwingUtilities.invokeLater(() -> setTitle(WINDOW_TITLE + " " + string));
+    }
+
+    public void close() {
+        SwingUtilities.invokeLater(() -> dispose());
     }
 }

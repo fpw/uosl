@@ -5,6 +5,8 @@ import java.nio.file.Paths;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.sound.midi.MetaEventListener;
+import javax.sound.midi.MetaMessage;
 import javax.sound.midi.MidiSystem;
 import javax.sound.midi.MidiUnavailableException;
 import javax.sound.midi.Sequence;
@@ -27,6 +29,7 @@ public class SoundManager {
     private final GameState game;
     private Sequencer sequencer;
     private Sequence songs[];
+    private int currentSongId;
 
     public SoundManager(GameState gameState) {
         this.game = gameState;
@@ -38,6 +41,16 @@ public class SoundManager {
             log.fine("Initializing MIDI system");
             sequencer = MidiSystem.getSequencer();
             sequencer.open();
+            sequencer.addMetaEventListener(new MetaEventListener() {
+                @Override
+                public void meta(MetaMessage meta) {
+                    if(meta.getType() == 0x2F && sequencer.isRunning()) {
+                        // stop sequencer at end of songs so we can start a different song
+                        log.finer("Song ended, stopping sequencer");
+                        sequencer.stop();
+                    }
+                }
+            });
         } catch (MidiUnavailableException e) {
             log.warning("No MIDI support -> no music");
         }
@@ -84,7 +97,7 @@ public class SoundManager {
             return;
         }
 
-        if(game.isPlayerInWarMode()) {
+        if(game.isPlayerInWarMode() && currentSongId != songTable[9]) {
             // in war mode, always play war song immediately
             playSongNow(songTable[9]);
         } else if(!sequencer.isRunning()) {
@@ -116,11 +129,13 @@ public class SoundManager {
             return;
         }
         if(id < 0 || id >= songs.length || songs[id] == null) {
-            // TODO: logging a warning would spam the log, think of something else
+            log.warning("Couldn't find song " + id);
             return;
         }
         try {
+            log.finer("Playing song " + id);
             sequencer.stop();
+            currentSongId = id;
             sequencer.setSequence(songs[id]);
             sequencer.start();
         } catch (Exception e) {

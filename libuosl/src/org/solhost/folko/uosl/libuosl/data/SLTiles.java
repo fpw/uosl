@@ -111,6 +111,10 @@ public class SLTiles {
         public boolean isStackable() {
             return (flags & FLAG_STACKABLE) != 0;
         }
+
+        public boolean isRoof() {
+            return (flags & FLAG_ROOF) != 0;
+        }
     }
 
     public SLTiles(String tilePath) throws IOException {

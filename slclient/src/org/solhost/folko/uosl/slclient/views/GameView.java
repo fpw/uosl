@@ -9,6 +9,7 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.ShortBuffer;
 import java.nio.file.Paths;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -240,6 +241,11 @@ public class GameView extends JPanel {
         }
         shader.setUniformFloat(texLocation, 0);
 
+        // check if an item is on top of us (in which case we won't draw items >= that height)
+        int playerZ = game.getPlayerLocation().getZ();
+        boolean playerCovered = game.getObjectsAt(game.getPlayerLocation())
+                                    .anyMatch((obj) -> obj.getLocation().getZ() > playerZ);
+
         for(int y = centerY - radius; y < centerY + radius; y++) {
             for(int x = centerX - radius; x < centerX + radius; x++) {
                 // draw land even at invalid locations: will draw void like real client
@@ -255,9 +261,19 @@ public class GameView extends JPanel {
                     continue;
                 }
 
+                Predicate<SLObject> zFilter = (obj) -> {
+                    if(playerCovered && obj instanceof SLItem) {
+                        boolean isAbove = obj.getLocation().getZ() > playerZ + 2 * SLData.CHARACHTER_HEIGHT;
+                        boolean isRoof = ((SLItem) obj).getTileInfo().isRoof();
+                        return !isAbove && !isRoof;
+                    }
+                    return true;
+                };
+
                 // now draw items and mobiles so that they cover the land
                 Point2D point = new Point2D(x, y);
                 game.getObjectsAt(point)
+                    .filter(zFilter)
                     .sorted(this::staticPaintOrderCompare)
                     .forEach((obj) ->
                 {
@@ -639,11 +655,11 @@ public class GameView extends JPanel {
         int z2 = o2.getLocation().getZ();
 
         // Special case:
-        //  let background always be overdrawn by non-background
+        //  let background and surface always be overdrawn by non-background
         //  unless the background is above the non-background (in which case the non-background gets overdrawn)
         //  Mobiles don't have a static tile and are never background
-        boolean o1IsBackground = !(o1 instanceof SLMobile) && tiles.getStaticTile(o1.getGraphic()).isBackground();
-        boolean o2IsBackground = !(o2 instanceof SLMobile) && tiles.getStaticTile(o2.getGraphic()).isBackground();
+        boolean o1IsBackground = !(o1 instanceof SLMobile) && (tiles.getStaticTile(o1.getGraphic()).isBackground() || tiles.getStaticTile(o1.getGraphic()).isSurface());
+        boolean o2IsBackground = !(o2 instanceof SLMobile) && (tiles.getStaticTile(o2.getGraphic()).isBackground() || tiles.getStaticTile(o2.getGraphic()).isSurface());
 
         if(o1IsBackground && !o2IsBackground) {
             return (z1 > z2) ? drawO1overO2 : drawO2overO1;
