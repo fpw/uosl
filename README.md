@@ -13,7 +13,7 @@ This repository contains the following projects:
 
 ## Project Status
 
-* libuosl: mature, can read all of the client's data files and almost every field in all data types are known and supported
+* libuosl: mature, can read all of the client's data files and almost every field in all data types is known and supported
 * ViewSL: mature, can view most of the client's data files
 * JPhex: beta, has support for all game mechanics but not all scripts are implemented, e.g. some items are missing and the NPCs are not very smart yet
 * SLClient: pre-alpha, I'm mainly doing experiments and prototypes here, especially the rendering is very slow because I'm currently focused on other parts
