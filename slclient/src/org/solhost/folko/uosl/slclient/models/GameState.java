@@ -224,6 +224,7 @@ public class GameState {
         itm.setLayer(itemInfo.getLayer());
         itm.setHue(itemInfo.getHue());
         mob.equip(itm);
+        objectsInRange.registerObject(itm);
     }
 
     public boolean hasPlayer() {
@@ -266,5 +267,9 @@ public class GameState {
 
     public boolean isPlayerInWarMode() {
         return player.isInWarMode();
+    }
+
+    public void toggleWarmode() {
+        player.setWarMode(!player.isInWarMode());
     }
 }

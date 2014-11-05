@@ -3,17 +3,46 @@ package org.solhost.folko.uosl.slclient.views;
 import java.awt.BorderLayout;
 import java.awt.Canvas;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Point;
 import java.awt.event.KeyEvent;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.ShortBuffer;
 import java.nio.file.Paths;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+
+
+
+
+
+
+
+
+
+
+
+
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
+
+
+
+
+
+
+
+
+
+
+
+
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.LWJGLException;
@@ -28,6 +57,7 @@ import org.solhost.folko.uosl.libuosl.data.SLArt.ArtEntry;
 import org.solhost.folko.uosl.libuosl.data.SLArt.MobileAnimation;
 import org.solhost.folko.uosl.libuosl.data.SLTiles.LandTile;
 import org.solhost.folko.uosl.libuosl.types.Direction;
+import org.solhost.folko.uosl.libuosl.types.Gumps;
 import org.solhost.folko.uosl.libuosl.types.Point2D;
 import org.solhost.folko.uosl.libuosl.types.Point3D;
 import org.solhost.folko.uosl.slclient.controllers.MainController;
@@ -37,6 +67,10 @@ import org.solhost.folko.uosl.slclient.models.SLMobile;
 import org.solhost.folko.uosl.slclient.models.SLObject;
 import org.solhost.folko.uosl.slclient.models.TexturePool;
 import org.solhost.folko.uosl.slclient.models.GameState.State;
+import org.solhost.folko.uosl.slclient.views.gumps.BaseGump;
+import org.solhost.folko.uosl.slclient.views.gumps.ContainerGump;
+import org.solhost.folko.uosl.slclient.views.gumps.PaperdollGump;
+import org.solhost.folko.uosl.slclient.views.gumps.BaseGump.GumpPart;
 import org.solhost.folko.uosl.slclient.views.util.InputGump;
 import org.solhost.folko.uosl.slclient.views.util.InputManager;
 import org.solhost.folko.uosl.slclient.views.util.PickList;
@@ -46,6 +80,18 @@ import org.solhost.folko.uosl.slclient.views.util.Texture;
 import org.solhost.folko.uosl.slclient.views.util.Transform;
 import org.solhost.folko.uosl.slclient.views.util.TextLog.TextEntry;
 
+
+
+
+
+
+
+
+
+
+
+
+
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL15.*;
 import static org.lwjgl.opengl.GL20.*;
@@ -54,10 +100,9 @@ import static org.lwjgl.opengl.GL30.*;
 public class GameView extends JPanel {
     private static final long serialVersionUID = 1L;
     private static final Logger log = Logger.getLogger("slclient.gameview");
-    private static final float GRID_DIAMETER = 42.0f;
-    private static final float GRID_EDGE     = GRID_DIAMETER / (float) Math.sqrt(2);
-    private static final float PROJECTION_CONSTANT = 4.0f;
-    private static final int FPS = 20;
+    public static final float GRID_DIAMETER = 42.0f;
+    public static final float GRID_EDGE     = GRID_DIAMETER / (float) Math.sqrt(2);
+    public static final float PROJECTION_CONSTANT = 4.0f;
 
     private final Canvas glCanvas;
 
@@ -74,25 +119,30 @@ public class GameView extends JPanel {
     private final TextLog textLog;
     private final Object sysMessageEntry;
 
+    // Gumps
+    private final List<BaseGump> openGumps;
+    private Object dragObject;
+    private Point dragOffset;
+
     // OpenGL stuff
+    private int frameRateLimit;
     private Transform projection, view, model;
     private ShaderProgram shader;
     private Integer vaoID, vboID, eboID;
     private int texLocation, zOffsetLocation, matLocation, texTypeLocation, selectionIDLocation;
+    private float zoom = 1.0f;
 
     // Input helpers
     private final InputManager input;
     private final PickList pickList;
     private final IntBuffer pickBuffer;
 
-    private float zoom = 1.0f;
-
+    // Animations
     private int animFrameCounter;
     private final int animDelay = 100;
     private long nextAnimFrameIncrease = animDelay;
 
     private long fpsCounter, lastFPSReport;
-
 
     public GameView(MainController mainController) {
         this.mainController = mainController;
@@ -107,19 +157,15 @@ public class GameView extends JPanel {
         this.pickBuffer = BufferUtils.createIntBuffer(1);
         this.pickList = new PickList();
         this.input = new InputManager();
+        this.openGumps = new LinkedList<>();
 
         setLayout(new BorderLayout());
+        glCanvas.setIgnoreRepaint(true);
         add(glCanvas, BorderLayout.CENTER);
 
         glCanvas.addMouseListener(input);
+        glCanvas.addMouseMotionListener(input);
         glCanvas.addKeyListener(input);
-
-        try {
-            Display.setParent(glCanvas);
-        } catch (LWJGLException e) {
-            log.log(Level.SEVERE, "Couldn't set display mode: " + e.getMessage(), e);
-            mainController.onGameError("Couldn't set display mode: " + e.getMessage());
-        }
 
         projection = new Transform();
     }
@@ -130,9 +176,18 @@ public class GameView extends JPanel {
             ContextAttribs contextAttribs = new ContextAttribs(3, 2)
                 .withForwardCompatible(true)
                 .withProfileCore(true);
+            Display.setResizable(true);
+            Display.setParent(glCanvas);
             Display.create(pixFormat, contextAttribs);
+            // TODO: Find the reason why this hack is necessary and fix it
+            // Without this, the menu bar will be below the canvas and isMouseInsideWindow
+            // will return false unless it left and re-entered the frame once
+            SwingUtilities.invokeLater(() -> {
+                Component root = SwingUtilities.getRoot(glCanvas);
+                root.setSize(root.getWidth(), root.getHeight() + 1);
+                root.setSize(root.getWidth(), root.getHeight() - 1);
+            });
             initGL();
-            glCanvas.requestFocus();
         } catch (LWJGLException e) {
             log.log(Level.SEVERE, "Couldn't create display: " + e.getMessage(), e);
             throw e;
@@ -206,11 +261,12 @@ public class GameView extends JPanel {
         if(game.getState() == State.LOGGED_IN) {
             // only render when logged in
             renderGameScene(false);
+            renderGumps(false);
             renderText();
         }
 
         calculateFPS();
-        Display.update();
+        Display.update(false);
 
         if(Display.wasResized()) {
             onResize();
@@ -469,11 +525,30 @@ public class GameView extends JPanel {
         }
     }
 
+    private void drawGumpPart(GumpPart part) {
+        part.texture.bind();
+        shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
+        shader.setUniformInt(texTypeLocation, 2);
+
+        Transform textureProjection = new Transform(projection);
+        textureProjection.scale(1 / zoom, 1 / zoom, 1);
+
+        Transform view = new Transform();
+        view.translate(-Display.getWidth() / 2.0f, -Display.getHeight() / 2.0f, 0);
+
+        model.reset();
+        model.translate(part.owner.getPosition().x + part.relativePosition.x,
+                part.owner.getPosition().y + part.relativePosition.y, 0);
+        model.scale(part.texture.getWidth(), part.texture.getHeight(), 1f);
+
+        shader.setUniformMatrix(matLocation, model.combine(view).combine(textureProjection));
+        glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
+    }
+
     private void drawAnimationFrame(MobileAnimation animation, int x, int y, int z) {
         int numFrames = animation.frames.size();
         Texture texture = TexturePool.getAnimationFrame(animation.frames.get(animFrameCounter % numFrames));
         texture.bind();
-        shader.setUniformInt(texTypeLocation, 1);
         shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
         shader.setUniformInt(texTypeLocation, 2);
         Transform textureProjection = new Transform(projection);
@@ -491,8 +566,30 @@ public class GameView extends JPanel {
         glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
     }
 
+    private void renderGumps(boolean selectMode) {
+        shader.bind();
+        if(!selectMode) {
+            shader.setUniformInt(selectionIDLocation, 0);
+        }
+        glBindVertexArray(vaoID);
+        glEnableVertexAttribArray(0);
+        for(BaseGump gump : openGumps) {
+            for(GumpPart part : gump.render()) {
+                if(selectMode) {
+                    shader.setUniformInt(selectionIDLocation, pickList.enter(part));
+                }
+                drawGumpPart(part);
+            }
+        }
+        glDisableVertexAttribArray(0);
+        glBindVertexArray(0);
+        shader.unbind();
+    }
+
     public void pause() {
-        Display.sync(FPS);
+        if(frameRateLimit > 0) {
+            Display.sync(frameRateLimit);
+        }
     }
 
     public void update(long elapsedMillis) {
@@ -501,6 +598,14 @@ public class GameView extends JPanel {
             animFrameCounter++;
             nextAnimFrameIncrease = animDelay;
         }
+
+        for(Iterator<BaseGump> it = openGumps.iterator(); it.hasNext(); ) {
+            BaseGump gump = it.next();
+            if(gump.wantsClose()) {
+                it.remove();
+            }
+        }
+
         textLog.update(elapsedMillis);
         handleInput();
     }
@@ -508,6 +613,7 @@ public class GameView extends JPanel {
     private void handleInput() {
         handleAsyncInput();
         handleSyncInput();
+        handleDragDrop();
     }
 
     private void handleAsyncInput() {
@@ -522,19 +628,35 @@ public class GameView extends JPanel {
             }
         }
 
+        // Single clicking is usually done with a delay to distinguish them
+        // from double clicks. To get immediate feedback when clicking in gumps,
+        // process the click immediately and cancel potential double or single clicks.
+        Point peekClick = input.peekNextSingleClick();
+        if(peekClick != null) {
+            Object obj = getObjectFromWindow(peekClick.x, peekClick.y);
+            if(obj instanceof GumpPart) {
+                GumpPart part = (GumpPart) obj;
+                part.owner.onClick(part);
+                input.abortNextSingleClick();
+            }
+        }
+
         Point doubleClick = input.pollLastDoubleClick();
         if(doubleClick != null) {
-            SLObject obj = getObjectFromWindow(doubleClick.x, doubleClick.y);
-            if(obj != null) {
-                mainController.onDoubleClickObject(obj);
+            Object obj = getObjectFromWindow(doubleClick.x, doubleClick.y);
+            if(obj instanceof SLObject) {
+                mainController.onDoubleClickObject((SLObject) obj);
             }
         }
 
         Point singleClick = input.pollLastSingleClick();
         if(singleClick != null) {
-            SLObject obj = getObjectFromWindow(singleClick.x, singleClick.y);
-            if(obj != null) {
-                mainController.onSingleClickObject(obj);
+            Object obj = getObjectFromWindow(singleClick.x, singleClick.y);
+            if(obj instanceof SLObject) {
+                mainController.onSingleClickObject((SLObject) obj);
+            } else if(obj instanceof GumpPart) {
+                GumpPart part = (GumpPart) obj;
+                part.owner.onClick(part);
             }
         }
     }
@@ -553,17 +675,80 @@ public class GameView extends JPanel {
         if(input.isRightMouseButtonDown()) {
             Point mousePos = getMousePosition();
             if(mousePos != null) {
-                double midX = Display.getWidth() / 2.0;
-                double midY = Display.getHeight() / 2.0;
+                Object mouseObj = getObjectFromWindow(mousePos.x, mousePos.y);
+                if(mouseObj instanceof GumpPart) {
+                    // right click on gump -> close
+                    ((GumpPart) mouseObj).owner.close();
+                } else {
+                    // right click on non-gump -> walking
+                    double midX = Display.getWidth() / 2.0;
+                    double midY = Display.getHeight() / 2.0;
 
-                double angle = Math.toDegrees(Math.atan2(mousePos.x - midX, getHeight() - mousePos.y - midY));
-                if(angle < 0) {
-                    angle = 360 + angle;
+                    double angle = Math.toDegrees(Math.atan2(mousePos.x - midX, getHeight() - mousePos.y - midY));
+                    if(angle < 0) {
+                        angle = 360 + angle;
+                    }
+
+                    mainController.onRequestMove(Direction.fromAngle(angle));
                 }
-
-                mainController.onRequestMove(Direction.fromAngle(angle));
             }
         }
+    }
+
+    private void handleDragDrop() {
+        Point dragPoint = input.peekLastDragEvent();
+        if(dragPoint != null) {
+            if(dragObject == null) {
+                // start dragging
+                Object obj = getObjectFromWindow(dragPoint.x, dragPoint.y);
+                if(obj instanceof SLItem) {
+                    beginDragItem((SLItem) obj, dragPoint);
+                } else if(obj instanceof GumpPart) {
+                    beginDragGump((GumpPart) obj, dragPoint);
+                }
+            } else {
+                // continue dragging
+                if(dragObject instanceof SLItem) {
+                    dragItem((SLItem) dragObject, dragPoint);
+                } else if(dragObject instanceof GumpPart) {
+                    dragGump((GumpPart) dragObject, dragPoint);
+                }
+            }
+        } else if(dragObject != null) {
+            // stopped dragging
+            if(dragObject instanceof SLItem) {
+                dropItem((SLItem) dragObject);
+            } else if(dragObject instanceof GumpPart) {
+                dropGump((GumpPart) dragObject);
+            }
+        }
+    }
+
+    private void beginDragItem(SLItem item, Point point) {
+        // TODO
+    }
+
+    private void dragItem(SLItem item, Point point) {
+        // TODO
+    }
+
+    private void dropItem(SLItem item) {
+        // TODO
+    }
+
+    private void beginDragGump(GumpPart part, Point point) {
+        if(part.owner.canDragGumpWithPart(part)) {
+            dragObject = part;
+            dragOffset = new Point(part.owner.getPosition().x - point.x, part.owner.getPosition().y - point.y);
+        }
+    }
+
+    private void dragGump(GumpPart part, Point point) {
+        part.owner.setPosition(new Point(point.x + dragOffset.x, point.y + dragOffset.y));
+    }
+
+    private void dropGump(GumpPart part) {
+        dragObject = null;
     }
 
     private void onResize() {
@@ -607,11 +792,12 @@ public class GameView extends JPanel {
         }
     }
 
-    private SLObject getObjectFromWindow(int x, int y) {
+    private Object getObjectFromWindow(int x, int y) {
         if(!pickList.isValid()) {
             // there is no select-frame for the current frame yet, so render one
             pickList.clear();
             renderGameScene(true);
+            renderGumps(true);
             pickList.setValid(true);
         }
 
@@ -680,5 +866,42 @@ public class GameView extends JPanel {
 
     public void showTextAbove(SLObject obj, String text, Color color) {
         textLog.addEntry(obj, text, color);
+    }
+
+    public void setFrameLimit(int limit) {
+        frameRateLimit = limit;
+    }
+
+    public int getFrameRateLimit() {
+        return frameRateLimit;
+    }
+
+    public void openGump(SLObject obj, int gumpID) {
+        if(gumpID == Gumps.ID_PAPERDOLL) {
+            openPaperdoll((SLMobile) obj);
+        } else if(Gumps.isContainerGump(gumpID)) {
+            openContainer((SLItem) obj, gumpID);
+        }
+    }
+
+    private boolean isGumpOpen(int gumpID, SLObject obj) {
+        for(BaseGump gump : openGumps) {
+            if(gump.getObject() == obj && (gumpID == 0 || gump.getGumpID() == gumpID)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void openContainer(SLItem obj, int gumpID) {
+        if(!isGumpOpen(0, obj)) {
+            openGumps.add(new ContainerGump(mainController, obj, gumpID));
+        }
+    }
+
+    private void openPaperdoll(SLMobile mob) {
+        if(!isGumpOpen(Gumps.ID_PAPERDOLL, mob)) {
+            openGumps.add(new PaperdollGump(mainController, mob, game.getPlayerSerial() == mob.getSerial()));
+        }
     }
 }

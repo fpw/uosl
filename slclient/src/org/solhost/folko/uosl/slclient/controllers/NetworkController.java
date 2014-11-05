@@ -15,6 +15,7 @@ import org.solhost.folko.uosl.libuosl.network.packets.EquipPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.InitPlayerPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.LocationPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.LoginErrorPacket;
+import org.solhost.folko.uosl.libuosl.network.packets.OpenGumpPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.RemoveObjectPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.SLPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.SendObjectPacket;
@@ -158,6 +159,10 @@ public class NetworkController implements ConnectionHandler {
         mainController.incomingSound(packet.getSoundID());
     }
 
+    private void onGump(OpenGumpPacket packet) {
+        mainController.incomingGump(packet.getSerial(), packet.getGumpID());
+    }
+
     private void handlePacket(SLPacket packet) {
         log.finest("Incoming packet: " + packet);
         try {
@@ -172,6 +177,7 @@ public class NetworkController implements ConnectionHandler {
             case AllowMovePacket.ID:    onAllowMove((AllowMovePacket) packet); break;
             case DenyMovePacket.ID:     onDenyMove((DenyMovePacket) packet); break;
             case SoundPacket.ID:        onSound((SoundPacket) packet); break;
+            case OpenGumpPacket.ID:     onGump((OpenGumpPacket) packet); break;
             default:                    log.warning("Unknown packet: " + packet);
             }
         } catch(Exception e) {

@@ -3,12 +3,10 @@ package org.solhost.folko.uosl.slclient.views.util;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.solhost.folko.uosl.slclient.models.SLObject;
-
 // TODO: not the best data structure for this, potential for optimization
 
 public class PickList {
-    private final Map<Integer, SLObject> pickEntries;
+    private final Map<Integer, Object> pickEntries;
     private int nextId;
     private boolean isValid;
 
@@ -33,12 +31,12 @@ public class PickList {
         pickEntries.clear();
     }
 
-    public int enter(SLObject obj) {
+    public int enter(Object obj) {
         pickEntries.put(nextId, obj);
         return nextId++;
     }
 
-    public SLObject get(int pickId) {
+    public Object get(int pickId) {
         if(!isValid) {
             throw new RuntimeException("pick from invalid list");
         }

@@ -10,6 +10,7 @@ public class SLItem extends SLObject implements SendableItem {
     private int amount;
     private StaticTile tileInfo;
     private boolean isStatic;
+    private boolean isWorn;
 
     public SLItem(long serial, int graphic) {
         super(serial, graphic);
@@ -68,7 +69,19 @@ public class SLItem extends SLObject implements SendableItem {
         return tileInfo;
     }
 
+    public void setWorn(boolean isWorn) {
+        this.isWorn = isWorn;
+    }
+
     public boolean isStatic() {
         return isStatic;
+    }
+
+    public boolean isOnGround() {
+        return !isWorn;
+    }
+
+    public boolean isWorn() {
+        return isWorn;
     }
 }

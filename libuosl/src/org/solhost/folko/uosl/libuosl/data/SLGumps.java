@@ -67,7 +67,9 @@ public class SLGumps {
             for(int y = 0; y < height; y++) {
                 for(int x = 0; x < width; x++) {
                     int color = gumps.readUWord();
-                    image.setRGB(x, y, SLColor.convert555(color, 0xFF));
+                    if(color != 0) {
+                        image.setRGB(x, y, SLColor.convert555(color, 0xFF));
+                    }
                 }
             }
             GumpEntry entry = new GumpEntry();

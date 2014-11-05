@@ -30,6 +30,7 @@ public class SoundManager {
     private Sequencer sequencer;
     private Sequence songs[];
     private int currentSongId;
+    private boolean playMusic;
 
     public SoundManager(GameState gameState) {
         this.game = gameState;
@@ -97,11 +98,22 @@ public class SoundManager {
             return;
         }
 
-        if(game.isPlayerInWarMode() && currentSongId != songTable[9]) {
+        if(!playMusic) {
+            if(sequencer.isRunning()) {
+                sequencer.stop();
+            }
+            return;
+        }
+
+        if(game.isPlayerInWarMode()) {
             // in war mode, always play war song immediately
-            playSongNow(songTable[9]);
-        } else if(!sequencer.isRunning()) {
+            if(currentSongId != songTable[9]) {
+                log.finer("Playing war song due to war mode");
+                playSongNow(songTable[9]);
+            }
+        } else if(!sequencer.isRunning() || currentSongId == songTable[9]) {
             // otherwise, only choose new song when required
+            log.finer("Selecting normal song");
             int index = 10;
             int x = game.getPlayerLocation().getX();
             int y = game.getPlayerLocation().getY();
@@ -177,6 +189,14 @@ public class SoundManager {
         if(sequencer != null && sequencer.isOpen()) {
             sequencer.stop();
             sequencer.close();
+        }
+    }
+
+    public void setEnableMusic(boolean enable) {
+        if(enable) {
+            playMusic = true;
+        } else {
+            playMusic = false;
         }
     }
 }

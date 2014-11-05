@@ -5,18 +5,23 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionListener;
 
 import javax.swing.SwingUtilities;
 
-public class InputManager implements MouseListener, KeyListener {
+public class InputManager implements MouseListener, MouseMotionListener, KeyListener {
     private static final int MOUSE_DOUBLE_CLICK_MS = 300;
+
+    private final boolean[] pressedKeys;
+    private final StringBuilder typedKeys;
 
     private long lastMouseLeftClickTime;
     private Point lastLeftClick, lastDoubleClick;
+    private MouseEvent curDragEvent;
+
     private boolean rightMouseButtonDown;
     private boolean mouseInsideWindow;
-    private final boolean[] pressedKeys;
-    private final StringBuilder typedKeys;
+
 
     public InputManager() {
         pressedKeys = new boolean[256];
@@ -25,16 +30,18 @@ public class InputManager implements MouseListener, KeyListener {
     }
 
     @Override
-    public void mousePressed(MouseEvent e) {
+    public synchronized void mousePressed(MouseEvent e) {
         if(SwingUtilities.isRightMouseButton(e)) {
             rightMouseButtonDown = true;
         }
     }
 
     @Override
-    public void mouseReleased(MouseEvent e) {
+    public synchronized void mouseReleased(MouseEvent e) {
         if(SwingUtilities.isRightMouseButton(e)) {
             rightMouseButtonDown = false;
+        } else if(SwingUtilities.isLeftMouseButton(e)) {
+            curDragEvent = null;
         }
     }
 
@@ -59,6 +66,15 @@ public class InputManager implements MouseListener, KeyListener {
         return res;
     }
 
+    public synchronized Point peekNextSingleClick() {
+        return lastLeftClick;
+    }
+
+    public synchronized void abortNextSingleClick() {
+        lastMouseLeftClickTime = 0;
+        lastLeftClick = null;
+    }
+
     public synchronized Point pollLastSingleClick() {
         if(lastMouseLeftClickTime != 0 && System.currentTimeMillis() - lastMouseLeftClickTime > MOUSE_DOUBLE_CLICK_MS) {
             lastMouseLeftClickTime = 0;
@@ -66,6 +82,23 @@ public class InputManager implements MouseListener, KeyListener {
         } else {
             return null;
         }
+    }
+
+    @Override
+    public synchronized void mouseDragged(MouseEvent e) {
+        curDragEvent = e;
+    }
+
+    public synchronized Point peekLastDragEvent() {
+        if(curDragEvent != null) {
+            return curDragEvent.getPoint();
+        } else {
+            return null;
+        }
+    }
+
+    @Override
+    public void mouseMoved(MouseEvent e) {
     }
 
     @Override
@@ -87,20 +120,20 @@ public class InputManager implements MouseListener, KeyListener {
     }
 
     @Override
-    public void keyPressed(KeyEvent e) {
+    public synchronized void keyPressed(KeyEvent e) {
         if(e.getKeyCode() < pressedKeys.length) {
             pressedKeys[e.getKeyCode()] = true;
         }
     }
 
     @Override
-    public void keyReleased(KeyEvent e) {
+    public synchronized void keyReleased(KeyEvent e) {
         if(e.getKeyCode() < pressedKeys.length) {
             pressedKeys[e.getKeyCode()] = false;
         }
     }
 
-    public boolean isKeyDown(int code) {
+    public synchronized boolean isKeyDown(int code) {
         return pressedKeys[code];
     }
 

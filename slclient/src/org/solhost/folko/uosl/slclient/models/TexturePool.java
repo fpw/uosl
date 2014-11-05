@@ -1,5 +1,7 @@
 package org.solhost.folko.uosl.slclient.models;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.logging.Logger;
 
 import org.solhost.folko.uosl.libuosl.data.SLArt;
@@ -13,6 +15,7 @@ public class TexturePool {
     private static Texture[] landTextures;
     private static Texture[] staticTextures;
     private static Texture[] animationFrames;
+    private static Map<Integer, Texture> gumps;
 
     private TexturePool() {
     }
@@ -21,6 +24,7 @@ public class TexturePool {
         landTextures = new Texture[SLArt.NUM_LAND_ARTS];
         staticTextures = new Texture[SLArt.NUM_STATIC_ARTS];
         animationFrames = new Texture[SLArt.NUM_ANIMATION_ARTS];
+        gumps = new HashMap<>();
 
         SLArt art = SLData.get().getArt();
         log.fine("Loading textures into GPU...");
@@ -50,6 +54,10 @@ public class TexturePool {
                 animationFrames[i - 0x4000] = new Texture(entry.image);
             }
         }
+
+        for(int id : SLData.get().getGumps().getAllGumpIDs()) {
+            gumps.put(id, new Texture(SLData.get().getGumps().getGump(id).image));
+        }
         log.fine("Done loading textures");
     }
 
@@ -63,5 +71,9 @@ public class TexturePool {
 
     public static Texture getAnimationFrame(int id) {
         return animationFrames[id - 0x4000];
+    }
+
+    public static Texture getGumpTexture(int id) {
+        return gumps.get(id);
     }
 }

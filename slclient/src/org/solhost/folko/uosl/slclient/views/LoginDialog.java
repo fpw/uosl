@@ -47,6 +47,8 @@ public class LoginDialog extends JDialog {
         loginButton.addActionListener((x) -> onLogin());
         add(loginButton);
 
+        getRootPane().setDefaultButton(loginButton);
+
         pack();
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         setModal(true);

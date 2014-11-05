@@ -4,7 +4,11 @@ import java.awt.BorderLayout;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFrame;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
 import javax.swing.SwingUtilities;
 
 import org.solhost.folko.uosl.slclient.controllers.MainController;
@@ -14,6 +18,7 @@ public class MainView extends JFrame {
     private static final String WINDOW_TITLE = "Ultima Online: Shattered Legacy";
     private static final int DEFAULT_WIDTH  = 800;
     private static final int DEFAULT_HEIGHT = 600;
+    private static final int FPS_LIMIT = 20;
 
     private final MainController controller;
     private final GameView gameView;
@@ -33,6 +38,8 @@ public class MainView extends JFrame {
         setLayout(new BorderLayout());
         add(gameView, BorderLayout.CENTER);
 
+        setupMenu();
+
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -41,12 +48,39 @@ public class MainView extends JFrame {
         });
     }
 
+    private void setupMenu() {
+        JMenuBar menuBar = new JMenuBar();
+
+        JMenu fileMenu = new JMenu("File");
+        JMenuItem exitItem = new JMenuItem("Exit");
+        exitItem.addActionListener((a) -> controller.onGameWindowClosed());
+        fileMenu.add(exitItem);
+        menuBar.add(fileMenu);
+
+        JMenu optionsMenu = new JMenu("Options");
+        JCheckBoxMenuItem fpsItem = new JCheckBoxMenuItem(String.format("Limit frame rate to %d FPS", FPS_LIMIT), true);
+        fpsItem.addActionListener((a) -> controller.setFrameLimit(fpsItem.getState() ? FPS_LIMIT : 0));
+        gameView.setFrameLimit(fpsItem.getState() ? FPS_LIMIT : 0);
+        optionsMenu.add(fpsItem);
+
+        JCheckBoxMenuItem musicItem = new JCheckBoxMenuItem("Music", true);
+        musicItem.addActionListener((a) -> controller.setEnableMusic(musicItem.getState()));
+        controller.setEnableMusic(musicItem.getState());
+        optionsMenu.add(musicItem);
+
+        menuBar.add(optionsMenu);
+
+        setJMenuBar(menuBar);
+    }
+
     public GameView getGameView() {
         return gameView;
     }
 
     public void showLoginDialog() {
-        SwingUtilities.invokeLater(() -> loginDialog.setVisible(true));
+        SwingUtilities.invokeLater(() -> {
+            loginDialog.setVisible(true);
+        });
     }
 
     public LoginDialog getLoginView() {

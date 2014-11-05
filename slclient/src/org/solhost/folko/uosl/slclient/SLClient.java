@@ -46,7 +46,7 @@ public class SLClient {
     }
 
     public static void main(String[] args) {
-        setupLogger(Level.FINE);
+        setupLogger(Level.FINER);
 
         log.info("Loading game data...");
         if(!initData()) {

@@ -27,6 +27,9 @@ public class ObjectRegistry {
     public void removeFarther(Point2D center, int radius) {
         for(Iterator<SLObject> it = serialMap.values().iterator(); it.hasNext(); ) {
             SLObject obj = it.next();
+            if(obj instanceof SLItem && !((SLItem) obj).isOnGround()) {
+                continue;
+            }
             if(obj.getLocation().distanceTo(center) > radius) {
                 it.remove();
             }
@@ -36,7 +39,12 @@ public class ObjectRegistry {
     public Stream<SLObject> getObjectsAt(Point2D pos) {
         return serialMap.values()
                 .stream()
-                .filter((obj) -> obj.getLocation().equals2D(pos));
+                .filter((obj) -> {
+                    if(obj instanceof SLItem && !((SLItem) obj).isOnGround()) {
+                        return false;
+                    }
+                    return obj.getLocation().equals2D(pos);
+                });
     }
 
     public SLObject getObjectBySerial(long serial) {

@@ -7,6 +7,10 @@ public class Player extends SLMobile {
         super(serial, graphic);
     }
 
+    public void setWarMode(boolean warMode) {
+        this.warMode = warMode;
+    }
+
     public boolean isInWarMode() {
         return warMode;
     }

@@ -227,4 +227,41 @@ public class MainController {
     public GameState getGameState() {
         return game;
     }
+
+    public void setFrameLimit(int limit) {
+        gameView.setFrameLimit(limit);
+    }
+
+    public void setEnableMusic(boolean state) {
+        soundManager.setEnableMusic(state);
+    }
+
+    public void incomingGump(long serial, int gumpID) {
+        SLObject obj = game.getObjectBySerial(serial);
+        if(obj == null) {
+            log.warning("Gump " + gumpID + " for unknown object " + serial);
+            return;
+        }
+        gameView.openGump(obj, gumpID);
+    }
+
+    public void onOpenBackscroll() {
+        log.warning("Backscroll not supported yet");
+    }
+
+    public void onOpenSkillWindow() {
+        log.warning("Skill window not supported yet");
+    }
+
+    public void onOpenStatus(SLMobile mob, boolean fullStatus) {
+        log.warning("Status gump not supported yet");
+    }
+
+    public void onToggleWarMode(SLMobile mob) {
+        if(mob.getSerial() == game.getPlayerSerial()) {
+            game.toggleWarmode();
+        } else {
+            log.warning("Warmode toggled for non-player mobile");
+        }
+    }
 }
