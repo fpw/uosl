@@ -149,6 +149,7 @@ public class SoundManager {
             sequencer.stop();
             currentSongId = id;
             sequencer.setSequence(songs[id]);
+            sequencer.setTickPosition(0);
             sequencer.start();
         } catch (Exception e) {
             log.log(Level.WARNING, "Couldn't play song " + id + ": " + e.getMessage(), e);
