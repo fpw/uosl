@@ -323,7 +323,7 @@ public class GameView extends JPanel {
         System.out.println("Statics at " + sceneCenter.getX() + ", " + sceneCenter.getY());
         for(SLStatic stat : sortStatics(statics.getStatics(sceneCenter))) {
             StaticTile tile = tiles.getStaticTile(stat.getStaticID());
-            String info = String.format("Z = %3d, height = %3d -> 0x%04X 0x%08X (%s)", stat.getLocation().getZ(), tile.height, stat.getStaticID(), tile.flags, tile.name);
+            String info = String.format("Z = %3d, height = %3d -> 0x%04X flags 0x%08X, serial 0x%08X (%s)", stat.getLocation().getZ(), tile.height, stat.getStaticID(), tile.flags, stat.getSerial(), tile.name);
             System.out.println(info);
         }
         int landID = map.getTextureID(sceneCenter);
