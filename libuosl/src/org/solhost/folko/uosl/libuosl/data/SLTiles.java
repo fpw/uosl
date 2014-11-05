@@ -23,8 +23,13 @@ import java.io.IOException;
 public class SLTiles {
     public static final int NUM_TEXTURES = 16384;
     public static final int NUM_STATICS = 16384;
+
     private static final int STATIC_START = 428032;
     private final SLDataFile tileDataFile;
+
+    private LandTile[] landTiles;
+    private StaticTile[] staticTiles;
+    private boolean cached;
 
     public class LandTile {
         public static final long FLAG_IMPASSABLE    = 0x00000040;
@@ -79,6 +84,10 @@ public class SLTiles {
         public String name;
         public int unknown1, unknown2, price;
 
+        public boolean isBackground() {
+            return (flags & FLAG_BACKGROUND) != 0;
+        }
+
         public boolean isContainer() {
             return (flags & FLAG_CONTAINER) != 0;
         }
@@ -102,50 +111,81 @@ public class SLTiles {
         public boolean isStackable() {
             return (flags & FLAG_STACKABLE) != 0;
         }
+
+        public boolean isRoof() {
+            return (flags & FLAG_ROOF) != 0;
+        }
     }
 
     public SLTiles(String tilePath) throws IOException {
         tileDataFile = new SLDataFile(tilePath, true);
+        cached = false;
     }
 
-    public synchronized LandTile getLandTile(int textureID) {
-        LandTile res = new LandTile();
-        if(textureID < 0 || textureID > NUM_TEXTURES) {
-            throw new IllegalArgumentException("invalid texture ID: " + textureID);
-        }
-        int landGroupIndex = textureID / 32;
-        int landGroupOffset = textureID % 32;
+    public void buildCache() {
+        landTiles = new LandTile[NUM_TEXTURES];
+        staticTiles = new StaticTile[NUM_STATICS];
 
-        int offset = landGroupIndex * 836 + 4 + landGroupOffset * 26;
-        tileDataFile.seek(offset);
-        res.flags = tileDataFile.readUDWord();
-        res.textureID = tileDataFile.readUWord();
-        res.name = tileDataFile.readString();
-        return res;
+        for(int i = 0; i < NUM_TEXTURES; i++) {
+            landTiles[i] = getLandTile(i);
+        }
+
+        for(int i = 0; i < NUM_STATICS; i++) {
+            staticTiles[i] = getStaticTile(i);
+        }
+        cached = true;
     }
 
-    public synchronized StaticTile getStaticTile(int staticID) {
-        StaticTile res = new StaticTile();
-        if(staticID < 0 || staticID > NUM_STATICS) {
-            throw new IllegalArgumentException("invalid static ID: " + staticID);
+    public LandTile getLandTile(int textureID) {
+        if(cached) {
+            return landTiles[textureID];
         }
-        int staticGroupIndex = staticID / 32;
-        int staticGroupOffset = staticID % 32;
-        int offset = STATIC_START + staticGroupIndex * 1188 + 4 + staticGroupOffset * 37;
-        tileDataFile.seek(offset);
-        res.flags = tileDataFile.readUDWord();
-        res.weight = tileDataFile.readUByte();
-        res.layer = tileDataFile.readUByte();
-        res.unknown1 = tileDataFile.readUWord();
-        tileDataFile.readUByte(); // unused
-        tileDataFile.readUByte(); // unused
-        res.animationID = tileDataFile.readUWord();
-        res.unknown2 = tileDataFile.readUByte();
-        tileDataFile.readUByte(); // unused
-        res.price = tileDataFile.readUWord();
-        res.height = tileDataFile.readUByte();
-        res.name = tileDataFile.readString();
-        return res;
+
+        synchronized(this) {
+            LandTile res = new LandTile();
+            if(textureID < 0 || textureID > NUM_TEXTURES) {
+                throw new IllegalArgumentException("invalid texture ID: " + textureID);
+            }
+            int landGroupIndex = textureID / 32;
+            int landGroupOffset = textureID % 32;
+
+            int offset = landGroupIndex * 836 + 4 + landGroupOffset * 26;
+            tileDataFile.seek(offset);
+            res.flags = tileDataFile.readUDWord();
+            res.textureID = tileDataFile.readUWord();
+            res.name = tileDataFile.readString();
+            return res;
+        }
+    }
+
+    public StaticTile getStaticTile(int staticID) {
+        if(cached) {
+            return staticTiles[staticID];
+        }
+
+        synchronized(this) {
+            StaticTile res = new StaticTile();
+            if(staticID < 0 || staticID > NUM_STATICS) {
+                throw new IllegalArgumentException("invalid static ID: " + staticID);
+            }
+            int staticGroupIndex = staticID / 32;
+            int staticGroupOffset = staticID % 32;
+            int offset = STATIC_START + staticGroupIndex * 1188 + 4 + staticGroupOffset * 37;
+            tileDataFile.seek(offset);
+            res.flags = tileDataFile.readUDWord();
+            res.weight = tileDataFile.readUByte();
+            res.layer = tileDataFile.readUByte();
+            res.unknown1 = tileDataFile.readUWord();
+            tileDataFile.readUByte(); // unused
+            tileDataFile.readUByte(); // unused
+            res.animationID = tileDataFile.readUWord();
+            res.unknown2 = tileDataFile.readUByte();
+            tileDataFile.readUByte(); // unused
+            res.price = tileDataFile.readUWord();
+            res.height = tileDataFile.readUByte();
+            res.name = tileDataFile.readString();
+            return res;
+        }
     }
 
     public String getTextureName(int textureID) {

@@ -1,12 +1,14 @@
 package org.solhost.folko.uosl.slclient.models;
 
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.function.Consumer;
+import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.lwjgl.Sys;
 import org.solhost.folko.uosl.libuosl.data.SLData;
+import org.solhost.folko.uosl.libuosl.data.SLStatic;
 import org.solhost.folko.uosl.libuosl.network.SendableItem;
 import org.solhost.folko.uosl.libuosl.network.SendableMobile;
 import org.solhost.folko.uosl.libuosl.network.SendableObject;
@@ -20,21 +22,18 @@ import org.solhost.folko.uosl.libuosl.types.Items;
 import org.solhost.folko.uosl.libuosl.types.Point2D;
 import org.solhost.folko.uosl.libuosl.types.Point3D;
 
-import javafx.beans.property.Property;
-import javafx.beans.property.ReadOnlyProperty;
-import javafx.beans.property.SimpleObjectProperty;
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableMap;
-
 public class GameState {
     public enum State {DISCONNECTED, CONNECTED, LOGGED_IN};
 
     private static final Logger log = Logger.getLogger("slclient.game");
-    private final Player player;
-    private final Property<State> state;
-    private final ObservableMap<Long, SLObject> objectsInRange;
+    private final ObservableValue<State> state;
+    private Player player;
+    private String loginName, loginPassword;
+
     private Connection connection;
     private int updateRange = 15;
+
+    private final ObjectRegistry objectsInRange;
 
     // Movement
     private final int MOVE_DELAY = 150;
@@ -42,74 +41,85 @@ public class GameState {
     private long lastMoveTime;
 
     public GameState() {
-        state = new SimpleObjectProperty<GameState.State>(State.DISCONNECTED);
-        objectsInRange = FXCollections.observableMap(new HashMap<Long, SLObject>());
-        player = new Player(-1, -1);
-
-        player.locationProperty().addListener((Player, oldLoc, newLoc) -> onPlayerLocationChange(oldLoc, newLoc));
-
+        state = new ObservableValue<>(State.DISCONNECTED);
+        objectsInRange = new ObjectRegistry();
         log.fine("Game state initialized");
     }
 
-    public ObservableMap<Long, SLObject> objectsInRangeProperty() {
-        return objectsInRange;
+    public void setLoginDetails(String name, String password) {
+        this.loginName = name;
+        this.loginPassword = password;
     }
 
-    public ReadOnlyProperty<State> stateProperty() {
-        return state;
-    }
-
-    public synchronized State getState() {
+    public State getState() {
         return state.getValue();
     }
 
-    public synchronized Player getPlayer() {
-        return player;
+    public void addStateListener(BiConsumer<State, State> listener) {
+        state.addObserver(listener);
     }
 
-    public synchronized void onConnect(Connection connection) {
+    public void removeStateListener(BiConsumer<State, State> listener) {
+        state.removeObserver(listener);
+    }
+
+    public void onConnect(Connection connection) {
         this.connection = connection;
         state.setValue(State.CONNECTED);
     }
 
-    public synchronized void onDisconnect() {
+    public void onDisconnect() {
         this.connection = null;
         state.setValue(State.DISCONNECTED);
     }
 
-    public synchronized void tryLogin() {
+    public void tryLogin() {
         LoginPacket login = new LoginPacket();
-        login.setName(player.getName());
-        login.setPassword(player.getPassword());
+        login.setName(loginName);
+        login.setPassword(loginPassword);
         login.setSeed(LoginPacket.LOGIN_BY_NAME);
         login.setSerial(LoginPacket.LOGIN_BY_NAME);
         login.prepareSend();
         connection.sendPacket(login);
     }
 
-    public synchronized void onLoginSuccess() {
+    public void onLoginSuccess(long serial, int graphic, Point3D location, Direction facing) {
+        player = new Player(serial, graphic);
+        player.setLocation(location);
+        player.setFacing(facing);
+        objectsInRange.registerObject(player);
         state.setValue(State.LOGGED_IN);
-        registerObject(player.getSerial(), player);
     }
 
-    public synchronized int getUpdateRange() {
+    public int getUpdateRange() {
         return updateRange;
     }
 
-    public synchronized void setUpdateRange(int updateRange) {
+    public void setUpdateRange(int updateRange) {
         this.updateRange = updateRange;
-        onPlayerLocationChange(player.getLocation(), player.getLocation());
-    }
-
-    public synchronized void forEachObjectAt(Point2D point, Consumer<SLObject> c) {
-        for(SLObject obj : objectsInRange.values()) {
-            if(point.equals(obj.getLocation())) {
-                c.accept(obj);
-            }
+        if(player != null) {
+            // treat as location change to remove old and show new objects
+            onPlayerLocationChange(player.getLocation(), player.getLocation());
         }
     }
 
-    public synchronized void playerMoveRequest(Direction dir) {
+    // there is potential for optimization here
+    public Stream<SLObject> getObjectsAt(Point2D point) {
+        return Stream.concat(
+                objectsInRange.getObjectsAt(point),
+                SLData.get().getStatics().getStaticsStream(point)
+                    .map((sta) -> SLItem.fromStatic(sta)));
+    }
+
+    // need better object hierarchy here
+    private List<SLStatic> getObjectsAsStaticAt(Point2D point) {
+        return getObjectsAt(point)
+            .filter((o) -> o instanceof SLItem)
+            .map((itm) -> new SLStatic(itm.getSerial(), itm.getGraphic(), itm.getLocation(), 0))
+            .collect(Collectors.toList());
+    }
+
+    public void playerMoveRequest(Direction dir) {
         if(lastMoveTime + MOVE_DELAY > getTimeMillis()) {
             // too fast
             return;
@@ -127,8 +137,9 @@ public class GameState {
             player.setFacing(dir);
             lastMoveTime = getTimeMillis();
         } else {
+            // actual move
             Point3D oldLoc = player.getLocation();
-            Point3D newLoc = SLData.get().getElevatedPoint(oldLoc, dir, (point) -> SLData.get().getStatics().getStaticsAndDynamicsAtLocation(point));
+            Point3D newLoc = SLData.get().getElevatedPoint(oldLoc, dir, (point) -> getObjectsAsStaticAt(point));
             if(newLoc != null) {
                 MoveRequestPacket packet = new MoveRequestPacket(dir, nextMoveSequence++, false);
                 connection.sendPacket(packet);
@@ -141,40 +152,34 @@ public class GameState {
         }
     }
 
-    public synchronized void playerTextInput(String text) {
+    public void playerTextInput(String text) {
         SpeechRequestPacket packet = new SpeechRequestPacket(text, 0x0000FF, SpeechRequestPacket.MODE_BARK);
         connection.sendPacket(packet);
     }
 
-    public synchronized void allowMove(short sequence) {
+    public void allowMove(short sequence) {
         lastAckedMoveSequence = sequence;
     }
 
-    public synchronized void denyMove(short deniedSequence, Point3D location, Direction facing) {
+    public void denyMove(short deniedSequence, Point3D location, Direction facing) {
         nextMoveSequence = 0;
         lastAckedMoveSequence = 0;
         player.setLocation(location);
         player.setFacing(facing);
     }
 
-    private synchronized void onPlayerLocationChange(Point3D oldLoc, Point3D newLoc) {
-        checkInvisible();
+    private void onPlayerLocationChange(Point3D oldLoc, Point3D newLoc) {
+        removeOutOfRangeObjects();
     }
 
-    private void checkInvisible() {
-        // check for objects no longer visible
-        Point3D location = player.getLocation();
-        for(Iterator<SLObject> it = objectsInRange.values().iterator(); it.hasNext(); ) {
-            SLObject obj = it.next();
-            if(obj.getLocation().distanceTo(location) > updateRange) {
-                it.remove();
-            }
-        }
+    private void removeOutOfRangeObjects() {
+        // remove objects that are no longer visible
+        objectsInRange.removeFarther(player.getLocation(), updateRange);
     }
 
-    public synchronized void updateOrInitObject(SendableObject object, Direction facing, int amount) {
+    public void updateOrInitObject(SendableObject object, Direction facing, int amount) {
         // valid in object: serial, graphic, location, hue
-        SLObject updatedObj = getObjectBySerial(object.getSerial());
+        SLObject updatedObj = objectsInRange.getObjectBySerial(object.getSerial());
         if(updatedObj == null) {
             // init new object
             if(object.getSerial() >= Items.SERIAL_FIRST) {
@@ -182,7 +187,7 @@ public class GameState {
             } else {
                 updatedObj = new SLMobile(object.getSerial(), object.getGraphic());
             }
-            registerObject(updatedObj.getSerial(), updatedObj);
+            objectsInRange.registerObject(updatedObj);
         }
         updatedObj.setGraphic(object.getGraphic());
         updatedObj.setLocation(object.getLocation());
@@ -192,31 +197,23 @@ public class GameState {
         } else if(updatedObj instanceof SLMobile) {
             ((SLMobile) updatedObj).setFacing(facing);
         }
-        checkInvisible();
+        removeOutOfRangeObjects();
     }
 
-    public synchronized void queryMobileInformation(SLMobile mob) {
+    public void queryMobileInformation(SLMobile mob) {
         SingleClickPacket packet = new SingleClickPacket(mob.getSerial());
         connection.sendPacket(packet);
     }
 
-    public synchronized void doubleClick(SLObject obj) {
+    public void doubleClick(SLObject obj) {
         DoubleClickPacket packet = new DoubleClickPacket(obj.getSerial());
         connection.sendPacket(packet);
     }
 
-    private void registerObject(long serial, SLObject updatedObj) {
-        objectsInRange.put(updatedObj.getSerial(), updatedObj);
-    }
-
-    public synchronized void removeObject(long serial) {
-        objectsInRange.remove(serial);
-    }
-
-    public synchronized void equipItem(SendableMobile mobInfo, SendableItem itemInfo) {
-        SLObject obj = getObjectBySerial(mobInfo.getSerial());
+    public void equipItem(SendableMobile mobInfo, SendableItem itemInfo) {
+        SLObject obj = objectsInRange.getObjectBySerial(mobInfo.getSerial());
         // if the item is visible or anything is known about it, forget it now
-        removeObject(itemInfo.getSerial());
+        objectsInRange.removeObject(itemInfo.getSerial());
 
         if(obj == null || !(obj instanceof SLMobile)) {
             log.fine("Equip received for unknown serial " + String.format("%08X", mobInfo.getSerial()));
@@ -227,16 +224,52 @@ public class GameState {
         itm.setLayer(itemInfo.getLayer());
         itm.setHue(itemInfo.getHue());
         mob.equip(itm);
+        objectsInRange.registerObject(itm);
     }
 
-    public SLObject getObjectBySerial(long serial) {
-        if(serial == player.getSerial()) {
-            return player;
-        }
-        return objectsInRange.get(serial);
+    public boolean hasPlayer() {
+        return player != null;
+    }
+
+    public void setPlayerGraphic(int graphic) {
+        player.setGraphic(graphic);
+    }
+
+    public void setPlayerLocation(Point3D location) {
+        Point3D oldLoc = player.getLocation();
+        player.setLocation(location);
+        onPlayerLocationChange(oldLoc, location);
+    }
+
+    public void setPlayerFacing(Direction facing) {
+        player.setFacing(facing);
+    }
+
+    public long getPlayerSerial() {
+        return player.getSerial();
+    }
+
+    public Point3D getPlayerLocation() {
+        return player.getLocation();
     }
 
     public long getTimeMillis() {
         return (Sys.getTime() * 1000) / Sys.getTimerResolution();
+    }
+
+    public void removeObject(long serial) {
+        objectsInRange.removeObject(serial);
+    }
+
+    public SLObject getObjectBySerial(long serial) {
+        return objectsInRange.getObjectBySerial(serial);
+    }
+
+    public boolean isPlayerInWarMode() {
+        return player.isInWarMode();
+    }
+
+    public void toggleWarmode() {
+        player.setWarMode(!player.isInWarMode());
     }
 }

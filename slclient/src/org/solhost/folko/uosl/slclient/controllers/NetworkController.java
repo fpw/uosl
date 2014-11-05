@@ -2,6 +2,9 @@ package org.solhost.folko.uosl.slclient.controllers;
 
 import java.io.IOException;
 import java.nio.channels.UnresolvedAddressException;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.solhost.folko.uosl.libuosl.network.SendableMobile;
@@ -12,6 +15,7 @@ import org.solhost.folko.uosl.libuosl.network.packets.EquipPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.InitPlayerPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.LocationPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.LoginErrorPacket;
+import org.solhost.folko.uosl.libuosl.network.packets.OpenGumpPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.RemoveObjectPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.SLPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.SendObjectPacket;
@@ -19,7 +23,7 @@ import org.solhost.folko.uosl.libuosl.network.packets.SendTextPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.SoundPacket;
 import org.solhost.folko.uosl.slclient.models.Connection;
 import org.solhost.folko.uosl.slclient.models.GameState;
-import org.solhost.folko.uosl.slclient.models.Player;
+import org.solhost.folko.uosl.slclient.models.GameState.State;
 import org.solhost.folko.uosl.slclient.models.SLObject;
 import org.solhost.folko.uosl.slclient.models.Connection.ConnectionHandler;
 
@@ -27,10 +31,13 @@ public class NetworkController implements ConnectionHandler {
     private static final Logger log = Logger.getLogger("slclient.network");
     private final MainController mainController;
     private final GameState game;
+    private final Queue<SLPacket> pendingPackets;
     private Connection connection;
+    private long loginSerial;
 
     public NetworkController(MainController mainController) {
         this.mainController = mainController;
+        this.pendingPackets = new ConcurrentLinkedQueue<SLPacket>();
         this.game = mainController.getGameState();
     }
 
@@ -94,20 +101,23 @@ public class NetworkController implements ConnectionHandler {
     }
 
     private void onInitPlayer(InitPlayerPacket packet) {
-        game.onLoginSuccess();
-        game.getPlayer().setSerial(packet.getSerial());
+        // set player serial
+        loginSerial = packet.getSerial();
     }
 
     private void onLocationChange(LocationPacket packet) {
         SendableMobile src = packet.getMobile();
-        if(src.getSerial() != game.getPlayer().getSerial()) {
-            log.warning("LocationPacket received for non-player object");
-            return;
+        if(game.getState() != State.LOGGED_IN) {
+            game.onLoginSuccess(loginSerial, src.getGraphic(), src.getLocation(), src.getFacing());
+        } else {
+            if(src.getSerial() != game.getPlayerSerial()) {
+                log.warning("LocationPacket received for non-player object");
+                return;
+            }
+            game.setPlayerGraphic(src.getGraphic());
+            game.setPlayerFacing(src.getFacing());
+            game.setPlayerLocation(src.getLocation());
         }
-        Player player = game.getPlayer();
-        player.setGraphic(src.getGraphic());
-        player.setFacing(src.getFacing());
-        player.setLocation(src.getLocation());
     }
 
     private void onSendObject(SendObjectPacket packet) {
@@ -137,7 +147,7 @@ public class NetworkController implements ConnectionHandler {
         long color = packet.getColor();
 
         switch(packet.getMode()) {
-        case SendTextPacket.MODE_SAY:       mainController.incomingSay(obj, src.getName(), text, color); break;
+        case SendTextPacket.MODE_SAY:       mainController.incomingSpeech(obj, src.getName(), text, color); break;
         case SendTextPacket.MODE_SEE:       mainController.incomingSee(obj, src.getName(), text, color); break;
         case SendTextPacket.MODE_SYSMSG:    mainController.incomingSysMsg(text, color); break;
         default:
@@ -149,21 +159,43 @@ public class NetworkController implements ConnectionHandler {
         mainController.incomingSound(packet.getSoundID());
     }
 
+    private void onGump(OpenGumpPacket packet) {
+        mainController.incomingGump(packet.getSerial(), packet.getGumpID());
+    }
+
+    private void handlePacket(SLPacket packet) {
+        log.finest("Incoming packet: " + packet);
+        try {
+            switch(packet.getID()) {
+            case LoginErrorPacket.ID:   onLoginFail((LoginErrorPacket) packet); break;
+            case InitPlayerPacket.ID:   onInitPlayer((InitPlayerPacket) packet); break;
+            case SendTextPacket.ID:     onIncomingText((SendTextPacket) packet); break;
+            case LocationPacket.ID:     onLocationChange((LocationPacket) packet); break;
+            case SendObjectPacket.ID:   onSendObject((SendObjectPacket) packet); break;
+            case RemoveObjectPacket.ID: onRemoveObject((RemoveObjectPacket) packet); break;
+            case EquipPacket.ID:        onEquip((EquipPacket) packet); break;
+            case AllowMovePacket.ID:    onAllowMove((AllowMovePacket) packet); break;
+            case DenyMovePacket.ID:     onDenyMove((DenyMovePacket) packet); break;
+            case SoundPacket.ID:        onSound((SoundPacket) packet); break;
+            case OpenGumpPacket.ID:     onGump((OpenGumpPacket) packet); break;
+            default:                    log.warning("Unknown packet: " + packet);
+            }
+        } catch(Exception e) {
+            log.log(Level.SEVERE, "Exception in packet handler: " + e.getMessage(), e);
+        }
+    }
+
+    // called by connection thread
     @Override
     public void onIncomingPacket(SLPacket packet) {
-        log.finest("Incoming packet: " + packet);
-        switch(packet.getID()) {
-        case LoginErrorPacket.ID:   onLoginFail((LoginErrorPacket) packet); break;
-        case InitPlayerPacket.ID:   onInitPlayer((InitPlayerPacket) packet); break;
-        case SendTextPacket.ID:     onIncomingText((SendTextPacket) packet); break;
-        case LocationPacket.ID:     onLocationChange((LocationPacket) packet); break;
-        case SendObjectPacket.ID:   onSendObject((SendObjectPacket) packet); break;
-        case RemoveObjectPacket.ID: onRemoveObject((RemoveObjectPacket) packet); break;
-        case EquipPacket.ID:        onEquip((EquipPacket) packet); break;
-        case AllowMovePacket.ID:    onAllowMove((AllowMovePacket) packet); break;
-        case DenyMovePacket.ID:     onDenyMove((DenyMovePacket) packet); break;
-        case SoundPacket.ID:        onSound((SoundPacket) packet); break;
-        default:                    log.warning("Unknown packet: " + packet);
+        pendingPackets.add(packet);
+    }
+
+    // called by game thread
+    public void update(long elapsedMillis) {
+        SLPacket packet;
+        while((packet = pendingPackets.poll()) != null) {
+            handlePacket(packet);
         }
     }
 }

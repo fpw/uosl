@@ -5,6 +5,8 @@ import java.nio.file.Paths;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.sound.midi.MetaEventListener;
+import javax.sound.midi.MetaMessage;
 import javax.sound.midi.MidiSystem;
 import javax.sound.midi.MidiUnavailableException;
 import javax.sound.midi.Sequence;
@@ -19,28 +21,40 @@ import org.solhost.folko.uosl.libuosl.data.SLData;
 import org.solhost.folko.uosl.libuosl.data.SLSound;
 import org.solhost.folko.uosl.libuosl.data.SLSound.SoundEntry;
 import org.solhost.folko.uosl.slclient.models.GameState;
+import org.solhost.folko.uosl.slclient.models.GameState.State;
 
 public class SoundManager {
     private static final Logger log = Logger.getLogger("slclient.sound");
     private final SLSound sound;
     private final GameState game;
-    private final Sequencer sequencer;
-    private final Sequence songs[];
+    private Sequencer sequencer;
+    private Sequence songs[];
+    private int currentSongId;
+    private boolean playMusic;
 
     public SoundManager(GameState gameState) {
         this.game = gameState;
         this.sound = SLData.get().getSound();
+    }
 
-        Sequencer midiSeq;
+    public void init() {
         try {
             log.fine("Initializing MIDI system");
-            midiSeq = MidiSystem.getSequencer();
-            midiSeq.open();
+            sequencer = MidiSystem.getSequencer();
+            sequencer.open();
+            sequencer.addMetaEventListener(new MetaEventListener() {
+                @Override
+                public void meta(MetaMessage meta) {
+                    if(meta.getType() == 0x2F && sequencer.isRunning()) {
+                        // stop sequencer at end of songs so we can start a different song
+                        log.finer("Song ended, stopping sequencer");
+                        sequencer.stop();
+                    }
+                }
+            });
         } catch (MidiUnavailableException e) {
             log.warning("No MIDI support -> no music");
-            midiSeq = null;
         }
-        sequencer = midiSeq;
         songs = new Sequence[25];
         loadSongs();
     }
@@ -79,15 +93,30 @@ public class SoundManager {
                 10, 16, 16, 16, 2, 24, 24, 24, 7, 4, 6, 7, 8, 9, 20, 1
         };
 
+        if(game.getState() != State.LOGGED_IN) {
+            // no music prior to login
+            return;
+        }
 
-        if(game.getPlayer().isInWarMode()) {
+        if(!playMusic) {
+            if(sequencer.isRunning()) {
+                sequencer.stop();
+            }
+            return;
+        }
+
+        if(game.isPlayerInWarMode()) {
             // in war mode, always play war song immediately
-            playSongNow(songTable[9]);
-        } else if(!sequencer.isRunning()) {
+            if(currentSongId != songTable[9]) {
+                log.finer("Playing war song due to war mode");
+                playSongNow(songTable[9]);
+            }
+        } else if(!sequencer.isRunning() || currentSongId == songTable[9]) {
             // otherwise, only choose new song when required
+            log.finer("Selecting normal song");
             int index = 10;
-            int x = game.getPlayer().getLocation().getX();
-            int y = game.getPlayer().getLocation().getY();
+            int x = game.getPlayerLocation().getX();
+            int y = game.getPlayerLocation().getY();
             int minDist = Integer.MAX_VALUE;
             for(int i = 0; i < locationTable.length; i++) {
                 int distX = Math.abs(x - locationTable[i][0]);
@@ -112,11 +141,13 @@ public class SoundManager {
             return;
         }
         if(id < 0 || id >= songs.length || songs[id] == null) {
-            // TODO: logging a warning would spam the log, think of something else
+            log.warning("Couldn't find song " + id);
             return;
         }
         try {
+            log.finer("Playing song " + id);
             sequencer.stop();
+            currentSongId = id;
             sequencer.setSequence(songs[id]);
             sequencer.start();
         } catch (Exception e) {
@@ -158,6 +189,14 @@ public class SoundManager {
         if(sequencer != null && sequencer.isOpen()) {
             sequencer.stop();
             sequencer.close();
+        }
+    }
+
+    public void setEnableMusic(boolean enable) {
+        if(enable) {
+            playMusic = true;
+        } else {
+            playMusic = false;
         }
     }
 }

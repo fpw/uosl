@@ -1,47 +1,47 @@
 package org.solhost.folko.uosl.slclient.controllers;
 
 import java.awt.Color;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.FutureTask;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.solhost.folko.uosl.libuosl.types.Direction;
 import org.solhost.folko.uosl.slclient.models.GameState;
+import org.solhost.folko.uosl.slclient.models.SLItem;
 import org.solhost.folko.uosl.slclient.models.SLMobile;
 import org.solhost.folko.uosl.slclient.models.SLObject;
+import org.solhost.folko.uosl.slclient.models.TexturePool;
 import org.solhost.folko.uosl.slclient.models.GameState.State;
 import org.solhost.folko.uosl.slclient.views.GameView;
-import org.solhost.folko.uosl.slclient.views.LoginView;
+import org.solhost.folko.uosl.slclient.views.LoginDialog;
+import org.solhost.folko.uosl.slclient.views.MainView;
 import org.solhost.folko.uosl.slclient.views.SoundManager;
-
-import javafx.application.Platform;
-import javafx.stage.Stage;
 
 public class MainController {
     private static final Logger log = Logger.getLogger("slclient.main");
     private final GameState game;
     private final NetworkController networkController;
-    private final Stage stage;
-    private Thread gameThread;
-    private boolean gameRunning;
-    private LoginView loginView;
-    private GameView gameView;
     private final SoundManager soundManager;
 
-    public MainController(Stage stage) {
-        this.stage = stage;
+    private boolean gameLoopRunning;
+    private final MainView mainView;
+    private final LoginDialog loginView;
+    private final GameView gameView;
+
+    public MainController() {
         this.game = new GameState();
         this.networkController = new NetworkController(this);
         this.soundManager = new SoundManager(game);
+        this.mainView = new MainView(this);
 
-        game.stateProperty().addListener((g, from, to) -> onGameStateChange(from, to));
+        gameView = mainView.getGameView();
+        loginView = mainView.getLoginView();
+
+        game.addStateListener(this::onGameStateChange);
+        mainView.setVisible(true);
     }
 
     public void showLoginScreen() {
-        loginView = new LoginView(this);
-        stage.setScene(loginView.getScene());
-        stage.show();
+        mainView.showLoginDialog();
     }
 
     private void onGameStateChange(State oldState, State newState) {
@@ -63,18 +63,15 @@ public class MainController {
 
     // user entered login data
     public void onLoginRequest(String host, String name, String password) {
-        game.getPlayer().setName(name);
-        game.getPlayer().setPassword(password);
         loginView.setBusy(true);
+        game.setLoginDetails(name, password);
         networkController.tryConnect(host);
     }
 
     private void onDisconnect(GameState.State oldState) {
         if(oldState == State.CONNECTED) {
             // login view still active, but server kicked us
-            Platform.runLater(() -> {
-                loginView.setBusy(false);
-            });
+            loginView.setBusy(false);
         }
     }
 
@@ -85,80 +82,65 @@ public class MainController {
 
     public void onLoginFail(String message) {
         networkController.stopNetwork();
-        Platform.runLater(() -> {
-            loginView.showError("Login failed: " + message);
-            loginView.setBusy(false);
-        });
+        loginView.showError("Login failed: " + message);
+        loginView.setBusy(false);
     }
 
     private void onLogin(State oldState) {
-        // stop JavaFX, start LWJGL
-        FutureTask<Void> task = new FutureTask<>(() -> {
-            Platform.setImplicitExit(false);
-            stage.hide();
-        }, null);
-
-        if(Platform.isFxApplicationThread()) {
-            task.run();
-        } else {
-            Platform.runLater(task);
-        }
-
-        try {
-            task.get(); // wait for task to complete
-            gameView = new GameView(this);
-            gameThread = new Thread(() -> gameLoop());
-            gameThread.start();
-        } catch (InterruptedException | ExecutionException e) {
-            log.log(Level.FINE, "Login stopped: " + e.getMessage(), e);
-        }
+        loginView.close();
     }
 
     public void onNetworkError(String reason) {
         if(game.getState() == State.DISCONNECTED || game.getState() == State.CONNECTED) {
             // means we couldn't connect or were kicked while logging in
-            Platform.runLater(() -> {
-                loginView.showError("Couldn't connect: " + reason);
-                loginView.setBusy(false);
-            });
+            loginView.showError("Couldn't connect: " + reason);
+            loginView.setBusy(false);
         }
     }
 
     public void onGameError(String reason) {
         log.severe("Game error: " + reason);
-        gameRunning = false;
+        onGameWindowClosed();
     }
 
-    public void onGameWindowClosed() {
-        if(gameRunning) {
+    // can be called from Swing thread or game thread
+    public synchronized void onGameWindowClosed() {
+        if(gameLoopRunning) {
             log.fine("Stopping game...");
-            gameRunning = false;
+            gameLoopRunning = false;
         }
-        shutdownSystems();
+        mainView.close();
     }
 
-    private void gameLoop() {
+    // this is the main game thread, everything in GameView and GameState should run
+    // in this thread. Events can be posted using scheduleUpdate
+    public void gameLoop() {
         long lastFrameTime = game.getTimeMillis();
         long thisFrameTime = game.getTimeMillis();
-        gameRunning = true;
+        gameLoopRunning = true;
 
-        gameView.createWindow();
         try {
-            while(gameRunning) {
+            startSystems();
+            log.fine("Entering game loop");
+            while(gameLoopRunning) {
                     thisFrameTime = game.getTimeMillis();
                     update(thisFrameTime - lastFrameTime);
                     gameView.render();
-                    lastFrameTime = thisFrameTime;
                     gameView.pause();
+                    lastFrameTime = thisFrameTime;
             }
         } catch(Exception e) {
             log.log(Level.SEVERE, "Game crashed: " + e.getMessage(), e);
             onGameError("Game crashed: " + e.getMessage());
         }
-        gameRunning = false;
-        gameView.close();
+        log.fine("Left game loop");
         shutdownSystems();
-        Platform.exit();
+    }
+
+    private void startSystems() throws Exception {
+        gameView.init();
+        soundManager.init();
+        TexturePool.load();
     }
 
     private void shutdownSystems() {
@@ -168,6 +150,7 @@ public class MainController {
 
     private void update(long elapsedMillis) {
         try {
+            networkController.update(elapsedMillis);
             gameView.update(elapsedMillis);
             soundManager.update(elapsedMillis);
         } catch(Exception e) {
@@ -191,8 +174,15 @@ public class MainController {
         }
     }
 
-    public void onSingleClickMobile(SLMobile mob) {
-        game.queryMobileInformation(mob);
+    public void onSingleClickObject(SLObject obj) {
+        if(obj instanceof SLItem) {
+            String name = obj.getName();
+            if(name.length() > 0) {
+                gameView.showTextAbove(obj, name, Color.WHITE);
+            }
+        } else if(obj instanceof SLMobile) {
+            game.queryMobileInformation((SLMobile) obj);
+        }
     }
 
     public void onDoubleClickObject(SLObject obj) {
@@ -215,7 +205,7 @@ public class MainController {
         gameView.showTextAbove(obj, text, new Color(col));
     }
 
-    public void incomingSay(SLObject obj, String name, String text, long color) {
+    public void incomingSpeech(SLObject obj, String name, String text, long color) {
         if(obj == null) {
             // TODO: display in lower left or something
             log.warning("Received speech for unknown object");
@@ -231,14 +221,47 @@ public class MainController {
     }
 
     public void onReportFPS(long fps) {
-        gameView.setTitleSuffix("| " + fps + " FPS");
-    }
-
-    public Stage getStage() {
-        return stage;
+        mainView.setTitleSuffix("| " + fps + " FPS");
     }
 
     public GameState getGameState() {
         return game;
+    }
+
+    public void setFrameLimit(int limit) {
+        gameView.setFrameLimit(limit);
+    }
+
+    public void setEnableMusic(boolean state) {
+        soundManager.setEnableMusic(state);
+    }
+
+    public void incomingGump(long serial, int gumpID) {
+        SLObject obj = game.getObjectBySerial(serial);
+        if(obj == null) {
+            log.warning("Gump " + gumpID + " for unknown object " + serial);
+            return;
+        }
+        gameView.openGump(obj, gumpID);
+    }
+
+    public void onOpenBackscroll() {
+        log.warning("Backscroll not supported yet");
+    }
+
+    public void onOpenSkillWindow() {
+        log.warning("Skill window not supported yet");
+    }
+
+    public void onOpenStatus(SLMobile mob, boolean fullStatus) {
+        log.warning("Status gump not supported yet");
+    }
+
+    public void onToggleWarMode(SLMobile mob) {
+        if(mob.getSerial() == game.getPlayerSerial()) {
+            game.toggleWarmode();
+        } else {
+            log.warning("Warmode toggled for non-player mobile");
+        }
     }
 }

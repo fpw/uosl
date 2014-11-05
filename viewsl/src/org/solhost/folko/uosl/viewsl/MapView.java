@@ -83,8 +83,8 @@ public class MapView extends JPanel {
         }
         int x = (p.x / 2) * 4;
         int y = (p.y / 2) * 4;
-        if(x < 1024 && y < 1024 && x >=0 && y >= 0) {
-            int z = map.getElevation(new Point2D(x, y));
+        if( x >=0 && y >= 0 && x < 1024 && y < 1024) {
+            int z = map.getTileElevation(new Point2D(x, y));
             coordsLabel.setText(String.format("Map Coordinates: %d, %d, %d", x, y, z));
         }
     }

@@ -1,4 +1,4 @@
-package org.solhost.folko.uosl.slclient.views;
+package org.solhost.folko.uosl.slclient.views.util;
 
 import java.awt.Color;
 import java.awt.Font;
@@ -15,7 +15,7 @@ public class InputGump {
     }
 
     public void feedCharacter(char c) {
-        if(c == 127) {
+        if(c == 127 || c == '\b') {
             // DEL
             int oldLen = inputLine.length();
             if(oldLen > 0) {

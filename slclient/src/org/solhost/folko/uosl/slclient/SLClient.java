@@ -1,7 +1,5 @@
 package org.solhost.folko.uosl.slclient;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -11,57 +9,31 @@ import org.solhost.folko.uosl.common.LogFormatter;
 import org.solhost.folko.uosl.libuosl.data.SLData;
 import org.solhost.folko.uosl.slclient.controllers.MainController;
 
-import javafx.application.Application;
-import javafx.stage.DirectoryChooser;
-import javafx.stage.Stage;
-
-public class SLClient extends Application {
+public class SLClient {
     private static final Logger log = Logger.getLogger("slclient");
-    private MainController mainController;
+    private final MainController mainController;
 
-    @Override
-    public void start(Stage stage) {
-        setupLogger(Level.FINER);
-
-        log.info("Loading game data...");
-        loadGameData();
-
+    public SLClient() {
         log.fine("Starting main controller");
-        mainController = new MainController(stage);
+        mainController = new MainController();
         mainController.showLoginScreen();
-
-        stage.setTitle("Ultima Online: Shattered Legacy");
-        stage.show();
     }
 
-    @Override
-    public void stop() throws Exception {
-        if(mainController != null) {
-            mainController.onGameWindowClosed();
+    public void run() {
+        mainController.gameLoop();
+    }
+
+    private static boolean initData() {
+        try {
+            SLData.init("data");
+        } catch(Exception e) {
+            return false;
         }
-        super.stop();
+        SLData.get().buildCaches();
+        return true;
     }
 
-    private void loadGameData() {
-        boolean dataLoaded = false;
-        String dir = "data";
-        do {
-            try {
-                SLData.init(dir);
-                dataLoaded = true;
-            } catch (IOException e) {
-                DirectoryChooser cd = new DirectoryChooser();
-                cd.setTitle("Choose UO:SL Data Directory");
-                File newDir = cd.showDialog(null);
-                if(newDir == null) {
-                    System.exit(-1);
-                }
-                dir = newDir.toString();
-            }
-        } while(!dataLoaded);
-    }
-
-    private void setupLogger(Level level) {
+    private static void setupLogger(Level level) {
         Handler handler = new ConsoleHandler();
         handler.setLevel(level);
         handler.setFormatter(new LogFormatter());
@@ -74,6 +46,15 @@ public class SLClient extends Application {
     }
 
     public static void main(String[] args) {
-        launch(args);
+        setupLogger(Level.FINER);
+
+        log.info("Loading game data...");
+        if(!initData()) {
+            log.severe("Couldn't load game data, make sure data/ directory exists and contains all MUL files with uppercase names");
+            return;
+        }
+
+        SLClient client = new SLClient();
+        client.run();
     }
 }

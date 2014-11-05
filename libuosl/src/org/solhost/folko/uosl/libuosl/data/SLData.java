@@ -60,6 +60,12 @@ public class SLData {
         return instance;
     }
 
+    public void buildCaches() {
+        tiles.buildCache();
+        map.buildCache();
+        statics.buildCache();
+    }
+
     private void load() throws IOException {
         map = new SLMap(dataPath +          "/MAP0.MUL");
         palette = new SLPalette(dataPath +  "/PALETTE.MUL");
@@ -166,7 +172,7 @@ public class SLData {
             return null;
         }
 
-        finalZ = map.getElevation(dest);
+        finalZ = map.getTileElevation(dest);
 
         int resX = dest.getX();
         int resY = dest.getY();
@@ -179,92 +185,6 @@ public class SLData {
         }
 
         return new Point3D(resX, resY, resZ);
-    }
-
-    // my own attempt before reverse engineering, but it wasn't behaving correctly
-    // at some locations, so the original function was taken
-    protected Point3D getElevatedPointOld(Point3D source, Direction dir, ObjectLister lister) {
-        Point2D dest = source.getTranslated(dir);
-        int mapZ =  map.getElevation(dest);
-
-        int charLowerZ = source.getZ();
-        int charUpperZ = charLowerZ + CHARACHTER_HEIGHT;
-        StaticTile walkOn = null;
-        boolean canWalk = true;
-        int finalZ = mapZ;
-        for(SLStatic stat : lister.getStaticsAndDynamicsAtLocation(dest)) {
-            StaticTile staTile = tiles.getStaticTile(stat.getStaticID());
-            int staHeight = tiles.getStaticHeight(stat.getStaticID());
-            int staLowerZ = stat.getLocation().getZ();
-            int staUpperZ = staLowerZ + staHeight;
-            int climbHeight = staUpperZ - charLowerZ;
-
-            boolean startsAboveUs = staLowerZ > charUpperZ;
-            boolean endsAboveUs = staUpperZ > charUpperZ;
-            boolean endsBelowUs = staUpperZ <= charLowerZ;
-            boolean inOurWay = (staLowerZ < charUpperZ && !endsBelowUs) || staLowerZ == charLowerZ;
-
-            if(startsAboveUs) {
-                // the static starts above us -> don't care
-                if(DEBUG_MOVE) System.out.println("ignoring " + staTile.name + " because it is above us");
-                continue;
-            }
-
-            if(inOurWay) {
-                if(staTile.isImpassable() && !staTile.isSurface()) {
-                    if(DEBUG_MOVE) System.err.println(staTile.name + " blocks because it is impassable and in our way");
-                    canWalk = false;
-                    break;
-                } else if(staTile.isStair() && staUpperZ >= charUpperZ) {
-                    if(DEBUG_MOVE) System.err.println(staTile.name + " blocks because it is a stair in our way " + staUpperZ + " / " + charUpperZ);
-                    canWalk = false;
-                    break;
-                }
-            }
-
-            if(endsAboveUs) {
-                if(DEBUG_MOVE) System.out.println(staTile.name + " ignored because it ends above us but wasn't impassible");
-                continue;
-            }
-
-            if(climbHeight <= 7) {
-                // the static is not above us but ends above us, we can climb it
-                if(staUpperZ >= finalZ) {
-                    if(DEBUG_MOVE) System.out.println("considering " + staTile.name + " as new standing position, climbing " + climbHeight);
-                    walkOn = staTile;
-                    finalZ = staUpperZ;
-                    canWalk = true; // found at least one possible static
-                } else {
-                    if(DEBUG_MOVE) System.out.println(staTile.name + " ignored because we are climbing higher");
-                }
-            } else {
-                if(DEBUG_MOVE) System.out.println(staTile.name + " ignored because we can't climb " + climbHeight);
-                continue;
-            }
-        }
-        if(!canWalk) {
-            if(DEBUG_MOVE) System.err.println("none of the statics was walkable for us, blocking move");
-            return null;
-        }
-        int diff = finalZ - charLowerZ;
-
-        if(diff > 0) {
-            if(DEBUG_MOVE) System.out.println("climbing " + diff);
-        } else if(diff < 0) {
-            if(DEBUG_MOVE) System.out.println("falling " + -diff);
-        }
-
-        // statics say yes -> but land could also block
-        LandTile landTile = tiles.getLandTile(map.getTextureID(dest));
-        if(walkOn == null && (landTile.isImpassable() || mapZ > CHARACHTER_HEIGHT + 7)) {
-            if(DEBUG_MOVE) System.err.println("land impassable and in our way");
-            return null;
-        }
-        if(walkOn != null) {
-            if(DEBUG_MOVE) System.out.println("Walking on " + walkOn.name);
-        }
-
-        return new Point3D(dest, finalZ);
     }
 
     // when standing at "from" and moving in direction "dir", what's the effective 3D point?

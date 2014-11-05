@@ -21,72 +21,89 @@ package org.solhost.folko.uosl.libuosl.data;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.solhost.folko.uosl.libuosl.types.Point2D;
 import org.solhost.folko.uosl.libuosl.types.Point3D;
-import org.solhost.folko.uosl.libuosl.util.ObjectLister;
 
-public class SLStatics implements ObjectLister {
+public class SLStatics {
     private final SLDataFile staticsFile, staticsIndex;
+    private List<SLStatic>[] staticCells;
+    private boolean cached;
 
     public SLStatics(String staticsPath, String staIdxPath) throws IOException {
         staticsFile = new SLDataFile(staticsPath, true);
         staticsIndex = new SLDataFile(staIdxPath, true);
+        cached = false;
     }
 
-    private synchronized List<SLStatic> getStatics(int cell) {
-        List<SLStatic> res = new LinkedList<SLStatic>();
-        int idxOffset = cell * 12;
-        staticsIndex.seek(idxOffset);
-        long staticsOffset = staticsIndex.readUDWord();
-        long staticsCount = staticsIndex.readUDWord() / 11;
+    @SuppressWarnings("unchecked")
+    public void buildCache() {
+        staticCells = new List[SLMap.MAP_HEIGHT / 8 * SLMap.MAP_HEIGHT / 8];
+        for(int i = 0; i < SLMap.CELL_COUNT; i++) {
+            staticCells[i] = getStatics(i);
+        }
+        cached = true;
+    }
 
-        if(staticsOffset == -1) { // no statics
+    private List<SLStatic> getStatics(int cell) {
+        if(cached) {
+            return staticCells[cell];
+        }
+
+        synchronized(this) {
+            int idxOffset = cell * 12;
+            staticsIndex.seek(idxOffset);
+            long staticsOffset = staticsIndex.readUDWord();
+            int staticsCount = (int) staticsIndex.readUDWord() / 11;
+            List<SLStatic> res = new ArrayList<SLStatic>(staticsCount);
+
+            if(staticsOffset == -1) { // no statics
+                return res;
+            }
+
+            staticsFile.seek((int) staticsOffset);
+
+            for(int i = 0; i < staticsCount; i++) {
+                long serial = staticsFile.readUDWord();
+                int staticID = staticsFile.readUWord();
+                byte xOffset = staticsFile.readSByte();
+                byte yOffset = staticsFile.readSByte();
+                byte z = staticsFile.readSByte();
+                int hue = staticsFile.readUWord();
+
+                Point3D location = new Point3D(Point2D.fromCell(cell, xOffset, yOffset), z);
+                SLStatic sta = new SLStatic(serial, staticID, location, hue);
+                res.add(sta);
+            }
             return res;
         }
-
-        staticsFile.seek((int) staticsOffset);
-
-        for(int i = 0; i < staticsCount; i++) {
-            long serial = staticsFile.readUDWord();
-            int staticID = staticsFile.readUWord();
-            byte xOffset = staticsFile.readSByte();
-            byte yOffset = staticsFile.readSByte();
-            byte z = staticsFile.readSByte();
-            int hue = staticsFile.readUWord();
-
-            Point3D location = new Point3D(Point2D.fromCell(cell, xOffset, yOffset), z);
-            SLStatic sta = new SLStatic(serial, staticID, location, hue);
-            res.add(sta);
-        }
-        return res;
     }
 
-    public synchronized List<SLStatic> getStatics(Point2D pos) {
-        List<SLStatic> res = new ArrayList<SLStatic>(10);
-        for(SLStatic stat : getStatics(pos.getCellIndex())) {
-            if(stat.getLocation().getX() == pos.getX() && stat.getLocation().getY() == pos.getY()) {
-                res.add(stat);
-            }
-        }
-        return res;
+    public Stream<SLStatic> getStaticsStream(Point2D pos) {
+        return getStatics(pos.getCellIndex())
+                    .stream()
+                    .filter((sta) -> sta.getLocation().equals2D(pos));
+    }
+
+    public Stream<SLStatic> getStaticsStream(int cell) {
+        return getStatics(cell).stream();
+    }
+
+    public List<SLStatic> getStatics(Point2D pos) {
+        return getStaticsStream(pos).collect(Collectors.toCollection(ArrayList::new));
     }
 
     public Map<Long, SLStatic> getAllStatics() {
         Map<Long, SLStatic> res = new HashMap<Long, SLStatic>();
-        for(int cell = 0; cell < 16384; cell++) {
+        for(int cell = 0; cell < SLMap.CELL_COUNT; cell++) {
             for(SLStatic stat : getStatics(cell)) {
                 res.put(stat.getSerial(), stat);
             }
         }
         return res;
-    }
-
-    @Override
-    public List<SLStatic> getStaticsAndDynamicsAtLocation(Point2D loc) {
-        return getStatics(loc);
     }
 }

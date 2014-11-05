@@ -50,6 +50,21 @@ public class Gumps {
         }
     }
 
+    public static boolean isContainerGump(int gumpID) {
+        switch(gumpID) {
+        case ID_BACKPACK:   return true;
+        case ID_BAG:        return true;
+        case ID_BASKET:     return true;
+        case ID_BOX:        return true;
+        case ID_SMALL_BOX:  return true;
+        case ID_METAL_CHEST:return true;
+        case ID_WOOD_CHEST: return true;
+        case ID_BARREL:     return true;
+        case ID_CORPSE:     return true;
+        default: return false;
+        }
+    }
+
     public static int getItemGump(int graphicID) {
         switch(graphicID) {
         case Items.GFX_BACKPACK:        return ID_BACKPACK;

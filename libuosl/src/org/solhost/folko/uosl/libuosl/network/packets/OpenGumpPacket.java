@@ -18,15 +18,37 @@
  ******************************************************************************/
 package org.solhost.folko.uosl.libuosl.network.packets;
 
+import java.nio.ByteBuffer;
+
 import org.solhost.folko.uosl.libuosl.network.SendableObject;
 
 public class OpenGumpPacket extends SLPacket {
-    private static final short ID =  0x42;
+    public static final short ID =  0x42;
+    private long serial;
+    private int gumpID;
+
+    private OpenGumpPacket() {
+    }
+
+    public static OpenGumpPacket read(ByteBuffer b, int len) {
+        OpenGumpPacket res = new OpenGumpPacket();
+        res.serial = readUDWord(b);
+        res.gumpID = readUWord(b);
+        return res;
+    }
 
     public OpenGumpPacket(SendableObject obj, int gumpID) {
         initWrite(ID, 0x0A);
         addUDWord(obj.getSerial());
         addUWord(gumpID);
+    }
+
+    public long getSerial() {
+        return serial;
+    }
+
+    public int getGumpID() {
+        return gumpID;
     }
 
     @Override
