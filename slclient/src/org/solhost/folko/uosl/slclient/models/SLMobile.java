@@ -43,10 +43,15 @@ public class SLMobile extends SLObject implements SendableMobile {
 
     public void equip(SLItem itm) {
         equipment.put(itm.getLayer(), itm);
-        itm.setWorn(true);
+        itm.setWorn(this);
     }
 
     public Collection<SLItem> getEquipment() {
         return Collections.unmodifiableCollection(equipment.values());
+    }
+
+    public void unequip(SLItem itm) {
+        equipment.remove(itm.getLayer());
+        itm.setWorn(null);
     }
 }

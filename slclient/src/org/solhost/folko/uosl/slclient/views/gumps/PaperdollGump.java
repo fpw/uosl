@@ -60,17 +60,19 @@ public class PaperdollGump extends BaseGump {
         res.add(statusButton);
         res.add(closeButton);
         for(SLItem itm : equipment) {
+            int animID = itm.getTileInfo().animationID;
+            if(animID == 0) {
+                continue;
+            }
+            int gID = animID + 0x64;
+
             GumpPart curPart = equipParts.get(itm.getLayer());
             if(curPart == null || curPart.gumpData != itm) {
-                int animID = itm.getTileInfo().animationID;
-                if(animID == 0) {
-                    continue;
-                }
-                int gID = animID + 0x64;
                 curPart = new GumpPart(this, TexturePool.getGumpTexture(gID), new Point(0, 0));
                 curPart.gumpData = itm;
                 equipParts.put(itm.getLayer(), curPart);
             }
+            curPart.texture = TexturePool.getGumpTexture(gID);
             res.add(curPart);
         }
         return res;

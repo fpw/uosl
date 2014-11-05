@@ -17,10 +17,15 @@ public class ObjectRegistry {
     }
 
     public void registerObject(SLObject obj) {
+        obj.register();
         serialMap.put(obj.getSerial(), obj);
     }
 
     public void removeObject(long serial) {
+        SLObject obj = getObjectBySerial(serial);
+        if(obj != null) {
+            obj.unregister();
+        }
         serialMap.remove(serial);
     }
 

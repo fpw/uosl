@@ -8,10 +8,20 @@ public abstract class SLObject implements SendableObject {
     protected Point3D location;
     protected int graphic, hue;
     protected String name;
+    protected boolean registered;
 
     public SLObject(long serial, int graphic) {
         setSerial(serial);
         setGraphic(graphic);
+        registered = false;
+    }
+
+    public void register() {
+        registered = true;
+    }
+
+    public void unregister() {
+        registered = false;
     }
 
     public long getSerial() {

@@ -227,6 +227,18 @@ public class GameState {
         objectsInRange.registerObject(itm);
     }
 
+    public void addItemToContainer(SendableItem itemInfo, SLItem container) {
+        // forget about the item as it has a new state now
+        objectsInRange.removeObject(itemInfo.getSerial());
+
+        SLItem itm = new SLItem(itemInfo.getSerial(), itemInfo.getGraphic());
+        itm.setHue(itemInfo.getHue());
+        itm.setAmount(itemInfo.getAmount());
+        itm.setLocation(itemInfo.getLocation());
+        container.addToContainer(itm);
+        objectsInRange.registerObject(itm);
+    }
+
     public boolean hasPlayer() {
         return player != null;
     }

@@ -7,12 +7,15 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.solhost.folko.uosl.libuosl.network.SendableItem;
 import org.solhost.folko.uosl.libuosl.network.SendableMobile;
 import org.solhost.folko.uosl.libuosl.network.SendableObject;
 import org.solhost.folko.uosl.libuosl.network.packets.AllowMovePacket;
 import org.solhost.folko.uosl.libuosl.network.packets.DenyMovePacket;
 import org.solhost.folko.uosl.libuosl.network.packets.EquipPacket;
+import org.solhost.folko.uosl.libuosl.network.packets.FullItemsContainerPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.InitPlayerPacket;
+import org.solhost.folko.uosl.libuosl.network.packets.ItemInContainerPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.LocationPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.LoginErrorPacket;
 import org.solhost.folko.uosl.libuosl.network.packets.OpenGumpPacket;
@@ -24,6 +27,7 @@ import org.solhost.folko.uosl.libuosl.network.packets.SoundPacket;
 import org.solhost.folko.uosl.slclient.models.Connection;
 import org.solhost.folko.uosl.slclient.models.GameState;
 import org.solhost.folko.uosl.slclient.models.GameState.State;
+import org.solhost.folko.uosl.slclient.models.SLItem;
 import org.solhost.folko.uosl.slclient.models.SLObject;
 import org.solhost.folko.uosl.slclient.models.Connection.ConnectionHandler;
 
@@ -163,6 +167,26 @@ public class NetworkController implements ConnectionHandler {
         mainController.incomingGump(packet.getSerial(), packet.getGumpID());
     }
 
+    private void onContainerContents(FullItemsContainerPacket packet) {
+        SLObject container = game.getObjectBySerial(packet.getContainerSerial());
+        if(!(container instanceof SLItem)) {
+            log.warning("Contents received for unknown container " + packet.getContainerSerial());
+            return;
+        }
+        for(SendableItem itm : packet.getItems()) {
+            game.addItemToContainer(itm, (SLItem) container);
+        }
+    }
+
+    private void onContainerItem(ItemInContainerPacket packet) {
+        SLObject container = game.getObjectBySerial(packet.getContainerSerial());
+        if(!(container instanceof SLItem)) {
+            log.warning("Item received for unknown container " + packet.getContainerSerial());
+            return;
+        }
+        game.addItemToContainer(packet.getItem(), (SLItem) container);
+    }
+
     private void handlePacket(SLPacket packet) {
         log.finest("Incoming packet: " + packet);
         try {
@@ -178,6 +202,8 @@ public class NetworkController implements ConnectionHandler {
             case DenyMovePacket.ID:     onDenyMove((DenyMovePacket) packet); break;
             case SoundPacket.ID:        onSound((SoundPacket) packet); break;
             case OpenGumpPacket.ID:     onGump((OpenGumpPacket) packet); break;
+            case FullItemsContainerPacket.ID: onContainerContents((FullItemsContainerPacket) packet); break;
+            case ItemInContainerPacket.ID: onContainerItem((ItemInContainerPacket) packet); break;
             default:                    log.warning("Unknown packet: " + packet);
             }
         } catch(Exception e) {

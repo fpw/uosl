@@ -1,5 +1,9 @@
 package org.solhost.folko.uosl.slclient.models;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+
 import org.solhost.folko.uosl.libuosl.data.SLData;
 import org.solhost.folko.uosl.libuosl.data.SLStatic;
 import org.solhost.folko.uosl.libuosl.data.SLTiles.StaticTile;
@@ -10,11 +14,13 @@ public class SLItem extends SLObject implements SendableItem {
     private int amount;
     private StaticTile tileInfo;
     private boolean isStatic;
-    private boolean isWorn;
+    private SLObject parent;
+    private final Set<SLItem> containerContents;
 
     public SLItem(long serial, int graphic) {
         super(serial, graphic);
         isStatic = false;
+        containerContents = new HashSet<SLItem>();
     }
 
     public static SLItem fromStatic(SLStatic stat) {
@@ -69,8 +75,22 @@ public class SLItem extends SLObject implements SendableItem {
         return tileInfo;
     }
 
-    public void setWorn(boolean isWorn) {
-        this.isWorn = isWorn;
+    public void setWorn(SLMobile byWhom) {
+        this.parent = byWhom;
+    }
+
+    @Override
+    public void unregister() {
+        if(parent instanceof SLItem) {
+            ((SLItem) parent).removeFromContainer(this);
+        } else if(parent instanceof SLMobile) {
+            ((SLMobile) parent).unequip(this);
+        }
+        super.unregister();
+    }
+
+    public void setContainer(SLItem container) {
+        this.parent = container;
     }
 
     public boolean isStatic() {
@@ -78,10 +98,28 @@ public class SLItem extends SLObject implements SendableItem {
     }
 
     public boolean isOnGround() {
-        return !isWorn;
+        return parent == null;
     }
 
     public boolean isWorn() {
-        return isWorn;
+        return parent instanceof SLMobile;
+    }
+
+    public boolean isInContainer() {
+        return parent instanceof SLItem;
+    }
+
+    public void addToContainer(SLItem itm) {
+        containerContents.add(itm);
+        itm.setContainer(this);
+    }
+
+    public void removeFromContainer(SLItem itm) {
+        containerContents.remove(itm);
+        itm.setContainer(null);
+    }
+
+    public Set<SLItem> getContainerContents() {
+        return Collections.unmodifiableSet(containerContents);
     }
 }
