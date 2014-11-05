@@ -18,6 +18,7 @@ public class LoginDialog extends JDialog {
     private static final long serialVersionUID = 1L;
     private final MainController controller;
     private final JTextField hostField, nameField, passwordField;
+    private final JButton loginButton;
 
     public LoginDialog(JFrame parent, MainController controller) {
         super(parent, "Login");
@@ -43,7 +44,7 @@ public class LoginDialog extends JDialog {
         quitButton.addActionListener((x) -> controller.onGameWindowClosed());
         add(quitButton);
 
-        JButton loginButton = new JButton("Login");
+        loginButton = new JButton("Login");
         loginButton.addActionListener((x) -> onLogin());
         add(loginButton);
 
@@ -64,6 +65,7 @@ public class LoginDialog extends JDialog {
             hostField.setEnabled(!busy);
             nameField.setEnabled(!busy);
             passwordField.setEnabled(!busy);
+            loginButton.setEnabled(!busy);
         });
     }
 

@@ -123,18 +123,18 @@ public class MainController {
             startSystems();
             log.fine("Entering game loop");
             while(gameLoopRunning) {
-                    thisFrameTime = game.getTimeMillis();
-                    update(thisFrameTime - lastFrameTime);
-                    gameView.render();
-                    gameView.pause();
-                    lastFrameTime = thisFrameTime;
+                thisFrameTime = game.getTimeMillis();
+                update(thisFrameTime - lastFrameTime);
+                gameView.render();
+                gameView.pause();
+                lastFrameTime = thisFrameTime;
             }
+            log.fine("Left game loop");
+            shutdownSystems();
         } catch(Exception e) {
             log.log(Level.SEVERE, "Game crashed: " + e.getMessage(), e);
             onGameError("Game crashed: " + e.getMessage());
         }
-        log.fine("Left game loop");
-        shutdownSystems();
     }
 
     private void startSystems() throws Exception {

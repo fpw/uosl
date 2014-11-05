@@ -17,32 +17,8 @@ import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-
-
-
-
-
-
-
-
-
-
-
-
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
-
-
-
-
-
-
-
-
-
-
-
-
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.LWJGLException;
@@ -79,18 +55,6 @@ import org.solhost.folko.uosl.slclient.views.util.TextLog;
 import org.solhost.folko.uosl.slclient.views.util.Texture;
 import org.solhost.folko.uosl.slclient.views.util.Transform;
 import org.solhost.folko.uosl.slclient.views.util.TextLog.TextEntry;
-
-
-
-
-
-
-
-
-
-
-
-
 
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL15.*;
@@ -160,7 +124,7 @@ public class GameView extends JPanel {
         this.openGumps = new LinkedList<>();
 
         setLayout(new BorderLayout());
-        glCanvas.setIgnoreRepaint(true);
+        glCanvas.enableInputMethods(true);
         add(glCanvas, BorderLayout.CENTER);
 
         glCanvas.addMouseListener(input);
@@ -172,6 +136,7 @@ public class GameView extends JPanel {
 
     public void init() throws Exception {
         try {
+            System.setProperty("org.lwjgl.opengl.Display.noinput", "true");
             PixelFormat pixFormat = new PixelFormat();
             ContextAttribs contextAttribs = new ContextAttribs(3, 2)
                 .withForwardCompatible(true)
@@ -266,7 +231,7 @@ public class GameView extends JPanel {
         }
 
         calculateFPS();
-        Display.update(false);
+        Display.update();
 
         if(Display.wasResized()) {
             onResize();

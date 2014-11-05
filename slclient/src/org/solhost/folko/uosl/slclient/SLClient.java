@@ -1,9 +1,12 @@
 package org.solhost.folko.uosl.slclient;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import javax.swing.SwingUtilities;
 
 import org.solhost.folko.uosl.common.LogFormatter;
 import org.solhost.folko.uosl.libuosl.data.SLData;
@@ -11,12 +14,18 @@ import org.solhost.folko.uosl.slclient.controllers.MainController;
 
 public class SLClient {
     private static final Logger log = Logger.getLogger("slclient");
-    private final MainController mainController;
+    private MainController mainController;
 
     public SLClient() {
         log.fine("Starting main controller");
-        mainController = new MainController();
-        mainController.showLoginScreen();
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                mainController = new MainController();
+                mainController.showLoginScreen();
+            });
+        } catch (InvocationTargetException | InterruptedException e) {
+            return;
+        }
     }
 
     public void run() {
