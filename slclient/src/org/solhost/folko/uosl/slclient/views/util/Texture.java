@@ -48,11 +48,8 @@ public class Texture {
         }
     }
 
-    public void setTextureUnit(int unit) {
-        glActiveTexture(GL_TEXTURE0 + unit);
-    }
-
-    public void bind() {
+    public void bind(int textureUnit) {
+        glActiveTexture(GL_TEXTURE0 + textureUnit);
         glBindTexture(GL_TEXTURE_2D, id);
     }
 

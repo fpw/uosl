@@ -16,21 +16,34 @@ public class ShaderProgram {
     private Integer fragmentShaderId;
 
     public ShaderProgram() {
-        programId = glCreateProgram();
     }
 
     public void setVertexShader(Path path) throws IOException {
+        if(programId == null) {
+            programId = glCreateProgram();
+        }
         vertexShaderId = readShader(path, GL_VERTEX_SHADER);
     }
 
     public void setFragmentShader(Path path) throws IOException {
+        if(programId == null) {
+            programId = glCreateProgram();
+        }
         fragmentShaderId = readShader(path, GL_FRAGMENT_SHADER);
+    }
+
+    public int getAttribLocation(String name) {
+        int location =  glGetAttribLocation(programId, name);
+        if(location == -1) {
+            throw new RuntimeException("Invalid attrib: " + name);
+        }
+        return location;
     }
 
     public int getUniformLocation(String name) {
         int location = glGetUniformLocation(programId, name);
         if(location == -1) {
-            throw new RuntimeException("Invalid uniform: " + location);
+            throw new RuntimeException("Invalid uniform: " + name);
         }
         return location;
     }

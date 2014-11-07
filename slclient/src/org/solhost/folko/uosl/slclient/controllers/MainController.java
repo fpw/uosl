@@ -9,7 +9,6 @@ import org.solhost.folko.uosl.slclient.models.GameState;
 import org.solhost.folko.uosl.slclient.models.SLItem;
 import org.solhost.folko.uosl.slclient.models.SLMobile;
 import org.solhost.folko.uosl.slclient.models.SLObject;
-import org.solhost.folko.uosl.slclient.models.TexturePool;
 import org.solhost.folko.uosl.slclient.models.GameState.State;
 import org.solhost.folko.uosl.slclient.views.GameView;
 import org.solhost.folko.uosl.slclient.views.LoginDialog;
@@ -140,7 +139,6 @@ public class MainController {
     private void startSystems() throws Exception {
         gameView.init();
         soundManager.init();
-        TexturePool.load();
     }
 
     private void shutdownSystems() {

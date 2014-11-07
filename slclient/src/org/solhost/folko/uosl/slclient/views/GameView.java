@@ -31,7 +31,6 @@ import org.solhost.folko.uosl.libuosl.data.SLMap;
 import org.solhost.folko.uosl.libuosl.data.SLTiles;
 import org.solhost.folko.uosl.libuosl.data.SLArt.ArtEntry;
 import org.solhost.folko.uosl.libuosl.data.SLArt.MobileAnimation;
-import org.solhost.folko.uosl.libuosl.data.SLTiles.LandTile;
 import org.solhost.folko.uosl.libuosl.types.Direction;
 import org.solhost.folko.uosl.libuosl.types.Gumps;
 import org.solhost.folko.uosl.libuosl.types.Point2D;
@@ -49,8 +48,10 @@ import org.solhost.folko.uosl.slclient.views.gumps.PaperdollGump;
 import org.solhost.folko.uosl.slclient.views.gumps.BaseGump.GumpPart;
 import org.solhost.folko.uosl.slclient.views.util.InputGump;
 import org.solhost.folko.uosl.slclient.views.util.InputManager;
+import org.solhost.folko.uosl.slclient.views.util.LandRenderer;
 import org.solhost.folko.uosl.slclient.views.util.PickList;
 import org.solhost.folko.uosl.slclient.views.util.ShaderProgram;
+import org.solhost.folko.uosl.slclient.views.util.StaticRenderer;
 import org.solhost.folko.uosl.slclient.views.util.TextLog;
 import org.solhost.folko.uosl.slclient.views.util.Texture;
 import org.solhost.folko.uosl.slclient.views.util.Transform;
@@ -74,7 +75,6 @@ public class GameView extends JPanel {
     private final GameState game;
 
     // Client data
-    private final SLMap map;
     private final SLTiles tiles;
     private final SLArt art;
 
@@ -89,11 +89,13 @@ public class GameView extends JPanel {
     private Point dragOffset;
 
     // OpenGL stuff
+    private final LandRenderer landRenderer;
+    private final StaticRenderer staticRenderer;
     private int frameRateLimit;
     private Transform projection, view, model;
     private ShaderProgram shader;
     private Integer vaoID, vboID, eboID;
-    private int texLocation, zOffsetLocation, matLocation, texTypeLocation, selectionIDLocation;
+    private int zOffsetLocation, matLocation, texTypeLocation, selectionIDLocation;
     private float zoom = 1.0f;
 
     // Input helpers
@@ -112,7 +114,6 @@ public class GameView extends JPanel {
         this.mainController = mainController;
         this.glCanvas = new Canvas();
         this.game = mainController.getGameState();
-        this.map = SLData.get().getMap();
         this.art = SLData.get().getArt();
         this.tiles = SLData.get().getTiles();
         this.inputGump = new InputGump();
@@ -122,6 +123,8 @@ public class GameView extends JPanel {
         this.pickList = new PickList();
         this.input = new InputManager();
         this.openGumps = new LinkedList<>();
+        this.landRenderer = new LandRenderer();
+        this.staticRenderer = new StaticRenderer();
 
         setLayout(new BorderLayout());
         glCanvas.enableInputMethods(true);
@@ -163,20 +166,25 @@ public class GameView extends JPanel {
 
     private void initGL() throws Exception {
         glClear(GL_COLOR_BUFFER_BIT);
+        TexturePool.load();
+        landRenderer.init();
+        staticRenderer.init();
 
         shader = new ShaderProgram();
         try {
             shader.setVertexShader(Paths.get("shaders", "tile.vert"));
             shader.setFragmentShader(Paths.get("shaders", "tile.frag"));
             shader.link();
+            shader.setUniformInt(shader.getUniformLocation("tex"), 0);
+            shader.bind();
+            shader.unbind();
+
             matLocation = shader.getUniformLocation("mat");
             zOffsetLocation = shader.getUniformLocation("zOffsets");
-            texLocation = shader.getUniformLocation("tex");
             texTypeLocation = shader.getUniformLocation("textureType");
             selectionIDLocation = shader.getUniformLocation("selectionID");
         } catch (Exception e) {
             shader.dispose();
-            log.log(Level.SEVERE, "Couldn't load shader: " + e.getMessage(), e);
             throw e;
         }
 
@@ -223,8 +231,11 @@ public class GameView extends JPanel {
         // rendering will fill the back buffer, thus invalidating the select-frame
         pickList.setValid(false);
 
+        glClear(GL_COLOR_BUFFER_BIT /* | GL_DEPTH_BUFFER_BIT */);
+
         if(game.getState() == State.LOGGED_IN) {
             // only render when logged in
+            renderLand();
             renderGameScene(false);
             renderGumps(false);
             renderText();
@@ -236,6 +247,17 @@ public class GameView extends JPanel {
         if(Display.wasResized()) {
             onResize();
         }
+    }
+
+    private void renderLand() {
+        int centerX = game.getPlayerLocation().getX();
+        int centerY = game.getPlayerLocation().getY();
+        int centerZ = game.getPlayerLocation().getZ();
+        int radius = game.getUpdateRange();
+
+        view = Transform.UO(GRID_DIAMETER, PROJECTION_CONSTANT);
+        view.translate(-centerX, -centerY, -centerZ);
+        landRenderer.render(projection, view, game.getPlayerLocation(), radius);
     }
 
     private void calculateFPS() {
@@ -254,19 +276,10 @@ public class GameView extends JPanel {
         int centerZ = game.getPlayerLocation().getZ();
         int radius = game.getUpdateRange();
 
-        glClear(GL_COLOR_BUFFER_BIT /* | GL_DEPTH_BUFFER_BIT */);
-
-        shader.bind();
-        glBindVertexArray(vaoID);
-        glEnableVertexAttribArray(0);
-
         view = Transform.UO(GRID_DIAMETER, PROJECTION_CONSTANT);
         view.translate(-centerX, -centerY, -centerZ);
 
-        if(!selectMode) {
-            shader.setUniformInt(selectionIDLocation, 0);
-        }
-        shader.setUniformFloat(texLocation, 0);
+        staticRenderer.setTransformations(projection, view);
 
         // check if an item is on top of us (in which case we won't draw items >= that height)
         int playerZ = game.getPlayerLocation().getZ();
@@ -275,15 +288,7 @@ public class GameView extends JPanel {
 
         for(int y = centerY - radius; y < centerY + radius; y++) {
             for(int x = centerX - radius; x < centerX + radius; x++) {
-                // draw land even at invalid locations: will draw void like real client
-                if(!selectMode) {
-                    // but only draw when doing real-rendering and not select-rendering
-                    // because land tiles will always be in background and are never
-                    // selectable
-                    drawLand(x, y);
-                }
-
-                // but don't attempt to draw anything else at invalid locations
+                // don't attempt to draw anything else at invalid locations
                 if(x < 0 || x >= SLMap.MAP_WIDTH || y < 0 || y >= SLMap.MAP_HEIGHT) {
                     continue;
                 }
@@ -304,21 +309,18 @@ public class GameView extends JPanel {
                     .sorted(this::staticPaintOrderCompare)
                     .forEach((obj) ->
                 {
+                    int selectionID = 0;
                     if(selectMode) {
-                        shader.setUniformInt(selectionIDLocation, pickList.enter(obj));
+                        selectionID =  pickList.enter(obj);
                     }
                     if(obj instanceof SLMobile) {
-                        drawMobile((SLMobile) obj);
+                        drawMobile((SLMobile) obj, selectionID);
                     } else if(obj instanceof SLItem) {
-                        drawItem((SLItem) obj);
+                        staticRenderer.renderStaticInGame(obj.getGraphic(), obj.getLocation(), selectionID);
                     }
                  });
             }
         }
-
-        glDisableVertexAttribArray(0);
-        glBindVertexArray(0);
-        shader.unbind();
     }
 
     private void renderText() {
@@ -351,71 +353,6 @@ public class GameView extends JPanel {
         shader.unbind();
     }
 
-    private void drawLand(int x, int y) {
-        Point3D point;
-        boolean shouldProject = false, canProject = false;
-        int selfZ = 0, eastZ = 0, southZ = 0, southEastZ = 0;
-        Texture texture;
-
-        if(x < 0 || x >= SLMap.MAP_WIDTH || y < 0 || y >= SLMap.MAP_HEIGHT) {
-            point = null;
-            texture = TexturePool.getLandTexture(1); // VOID texture like in real client
-            shader.setUniformInt(texTypeLocation, 0);
-        } else {
-            point = new Point3D(x, y, getZ(x, y));
-            int landID = map.getTextureID(point);
-            LandTile landTile = tiles.getLandTile(landID);
-            selfZ = point.getZ();
-            eastZ = getZ(x + 1, y);
-            southZ = getZ(x, y + 1);
-            southEastZ = getZ(x + 1, y + 1);
-            shouldProject = (selfZ != eastZ) || (selfZ != southZ) || (selfZ != southEastZ);
-            canProject = (landTile != null && landTile.textureID != 0);
-            if(shouldProject && canProject) {
-                texture = TexturePool.getStaticTexture(landTile.textureID);
-                shader.setUniformInt(texTypeLocation, 1);
-            } else {
-                texture = TexturePool.getLandTexture(landID);
-                shader.setUniformInt(texTypeLocation, 0);
-            }
-            if(texture == null) {
-                texture = TexturePool.getLandTexture(0);
-            }
-        }
-        texture.bind();
-        shader.setUniformFloat(zOffsetLocation, selfZ, southZ, southEastZ, eastZ);
-
-        model.reset();
-        model.translate(x, y, 0);
-        shader.setUniformMatrix(matLocation, model.combine(view).combine(projection));
-        glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
-    }
-
-    private void drawItem(SLItem item) {
-        int x = item.getLocation().getX();
-        int y = item.getLocation().getY();
-        int z = item.getLocation().getZ();
-
-        shader.setUniformInt(texTypeLocation, 1);
-        shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
-        Texture texture = TexturePool.getStaticTexture(item.getGraphic());
-        if(texture == null) {
-            log.warning("No texture for item with graphic: " + item.getGraphic());
-            return;
-        }
-        texture.bind();
-
-        Transform textureProjection = new Transform(projection);
-        textureProjection.translate(-texture.getWidth() / 2.0f, GRID_DIAMETER - texture.getHeight(), 0);
-
-        model.reset();
-        model.translate(x, y, z);
-        model.rotate(0, 0, -45);
-        model.scale(texture.getWidth() / GRID_EDGE, texture.getHeight() / GRID_EDGE, 1f);
-        shader.setUniformMatrix(matLocation, model.combine(view).combine(textureProjection));
-        glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
-    }
-
     private void drawTextAtGamePosition(Texture text, Point3D where, int yOffset, boolean centered) {
         int x = where.getX();
         int y = where.getY();
@@ -423,7 +360,7 @@ public class GameView extends JPanel {
 
         shader.setUniformInt(texTypeLocation, 1);
         shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
-        text.bind();
+        text.bind(0);
 
         Transform textureProjection = new Transform(projection);
         textureProjection.translate(-text.getWidth() / 2.0f, GRID_DIAMETER - text.getHeight() - yOffset, 0);
@@ -440,7 +377,7 @@ public class GameView extends JPanel {
     private void drawTextAtScreenPosition(Texture text, int x, int y, boolean centered) {
         shader.setUniformInt(texTypeLocation, 1);
         shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
-        text.bind();
+        text.bind(0);
 
         Transform textureProjection = new Transform(projection);
         textureProjection.scale(1 / zoom, 1 / zoom, 1);
@@ -457,13 +394,16 @@ public class GameView extends JPanel {
         glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
     }
 
-    private void drawMobile(SLMobile mobile) {
+    private void drawMobile(SLMobile mobile, int selectionId) {
         boolean fighting = false;
         int x = mobile.getLocation().getX();
         int y = mobile.getLocation().getY();
         int z = mobile.getLocation().getZ();
         int graphic = mobile.getGraphic();
         Direction facing = mobile.getFacing();
+
+        shader.bind();
+        shader.setUniformInt(selectionIDLocation, selectionId);
 
         // draw character first
         MobileAnimation animation = art.getAnimationEntry(graphic, facing, fighting);
@@ -491,7 +431,7 @@ public class GameView extends JPanel {
     }
 
     private void drawGumpPart(GumpPart part) {
-        part.texture.bind();
+        part.texture.bind(0);
         shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
         shader.setUniformInt(texTypeLocation, 2);
 
@@ -513,7 +453,10 @@ public class GameView extends JPanel {
     private void drawAnimationFrame(MobileAnimation animation, int x, int y, int z) {
         int numFrames = animation.frames.size();
         Texture texture = TexturePool.getAnimationFrame(animation.frames.get(animFrameCounter % numFrames));
-        texture.bind();
+        glBindVertexArray(vaoID);
+        glEnableVertexAttribArray(0);
+        texture.bind(0);
+        shader.bind();
         shader.setUniformFloat(zOffsetLocation, 0, 0, 0, 0);
         shader.setUniformInt(texTypeLocation, 2);
         Transform textureProjection = new Transform(projection);
@@ -529,6 +472,9 @@ public class GameView extends JPanel {
         model.scale(texture.getWidth() / GRID_EDGE, texture.getHeight() / GRID_EDGE, 1f);
         shader.setUniformMatrix(matLocation, model.combine(view).combine(textureProjection));
         glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, 0);
+        glDisableVertexAttribArray(0);
+        glBindVertexArray(0);
+        shader.unbind();
     }
 
     private void renderGumps(boolean selectMode) {
@@ -737,10 +683,6 @@ public class GameView extends JPanel {
         mainController.onUpdateRangeChange(radius);
     }
 
-    private int getZ(int x, int y) {
-        return map.getTileElevation(new Point2D(x, y));
-    }
-
     private int getGraphicHeight(SLObject obj) {
         int staticId = obj.getGraphic();
         if(obj instanceof SLMobile) {
@@ -772,6 +714,9 @@ public class GameView extends JPanel {
     }
 
     public void close() {
+        landRenderer.dispose();
+        staticRenderer.dispose();
+
         if(shader != null) {
             shader.dispose();
             shader = null;

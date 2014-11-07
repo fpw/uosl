@@ -36,11 +36,12 @@ public class ContainerGump extends BaseGump {
             GumpPart part = itemParts.get(itm);
             Point pos = new Point(itm.getLocation().getX(), itm.getLocation().getY());
             if(part == null) {
-                part = new GumpPart(this, TexturePool.getStaticTexture(itm.getGraphic()), pos);
-                part.gumpData = itm;
-                itemParts.put(itm, part);
+                break;
+                // part = new GumpPart(this, TexturePool.getStaticTexture(itm.getGraphic()), pos);
+                // part.gumpData = itm;
+                // itemParts.put(itm, part);
             } else {
-                part.texture = TexturePool.getStaticTexture(itm.getGraphic());
+                // part.texture = TexturePool.getStaticTexture(itm.getGraphic());
                 part.relativePosition = pos;
             }
             res.add(part);

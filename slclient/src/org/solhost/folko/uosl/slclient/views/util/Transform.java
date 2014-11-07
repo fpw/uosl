@@ -25,6 +25,10 @@ public class Transform {
         mat.setIdentity();
     }
 
+    public void reset(Transform projection) {
+        mat.load(projection.mat);
+    }
+
     public Transform translate(float x, float y, float z) {
         Matrix4f.translate(new Vector3f(x, y, z), mat, mat);
         return this;
