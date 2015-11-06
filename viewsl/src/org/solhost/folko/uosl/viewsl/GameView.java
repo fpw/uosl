@@ -375,6 +375,7 @@ public class GameView extends JPanel {
                 int z1 = o1.getLocation().getZ();
                 int z2 = o2.getLocation().getZ();
 
+                // draw background first so it will be overdrawn by statics
                 if((tile1.flags & StaticTile.FLAG_BACKGROUND) != 0) {
                     if((tile2.flags & StaticTile.FLAG_BACKGROUND) == 0) {
                         // draw background first so it will be overdrawn by statics
@@ -386,6 +387,16 @@ public class GameView extends JPanel {
                         }
                     }
                 }
+                
+                // draw translucent tiles on top, e.g. water above stones beneath the water
+                if(z1 == z2) {
+                    if((tile1.flags & StaticTile.FLAG_TRANSLUCENT) != 0) {
+                        return -1;
+                    } else if((tile2.flags & StaticTile.FLAG_TRANSLUCENT) != 0) {
+                        return 1;
+                    }
+                }
+
                 // default
                 return z1 - z2;
             }
