@@ -116,9 +116,10 @@ final class SLDataFile {
         char chr;
         for(int i = 0; i < len; i++) {
             chr = (char) mappedFile.get();
-            if(chr != '\0') {
-                res.append(chr);
+            if (chr == '\0') {
+                break;
             }
+            res.append(chr);
         }
         return res.toString();
     }
